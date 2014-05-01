@@ -7,19 +7,15 @@ JENV_VARS= KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:test/log4j.properties" K
 
 default: test
 
-test: testdeps kill-kafka kill-zookeeper start-zookeeper start-kafka
+test: deps kill-kafka kill-zookeeper start-zookeeper start-kafka
 	go test
 	@make kill-kafka
 	@make kill-zookeeper
 
 .PHONY: test
 
-testdeps: deps
-	go get github.com/onsi/ginkgo
-	go get github.com/onsi/gomega
-
 deps:
-	go get
+	go get ./...
 
 start-zookeeper: $(KAFKA_ROOT) /tmp/sarama-cluster-test
 	$(JENV_VARS) $(KAFKA_ROOT)/bin/kafka-run-class.sh -name zookeeper -loggc org.apache.zookeeper.server.ZooKeeperServerMain test/zookeeper.properties & echo "$$!" > "test/zookeeper.pid"
