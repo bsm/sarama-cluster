@@ -39,7 +39,7 @@ type ConsumerGroup struct {
 	zkchange <-chan zk.Event
 	claimed  chan *PartitionConsumer
 
-	checkout, stopper, done chan bool
+	checkout, force, stopper, done chan bool
 }
 
 // NewConsumerGroup creates a new consumer group for a given topic.
@@ -79,6 +79,7 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 		stopper:  make(chan bool),
 		done:     make(chan bool),
 		checkout: make(chan bool),
+		force:    make(chan bool),
 		claimed:  make(chan *PartitionConsumer),
 	}
 
@@ -107,7 +108,7 @@ func (cg *ConsumerGroup) Checkout(callback func(*PartitionConsumer) error) error
 	err := callback(claimed)
 	if err == DiscardCommit {
 		err = nil
-	} else if err == nil {
+	} else if err == nil && claimed.offset > 0 {
 		err = cg.Commit(claimed.partition, claimed.offset+1)
 	}
 	return err
@@ -121,9 +122,14 @@ func (cg *ConsumerGroup) Checkout(callback func(*PartitionConsumer) error) error
 func (cg *ConsumerGroup) Process(callback func(*EventBatch) error) error {
 	return cg.Checkout(func(pc *PartitionConsumer) error {
 		if batch := pc.Fetch(); batch != nil {
+
 			// Try to reset offset on OffsetOutOfRange errors
 			if batch.offsetIsOutOfRange() {
-				return cg.Commit(pc.partition, 0)
+				if err := cg.Commit(pc.partition, 0); err != nil {
+					return err
+				}
+				cg.force <- true
+				batch.Events = batch.Events[:1]
 			}
 
 			return callback(batch)
@@ -182,6 +188,8 @@ func (cg *ConsumerGroup) signalLoop() {
 		case <-cg.stopper:
 			cg.stop()
 			return
+		case <-cg.force:
+			cg.zkchange = nil
 		case <-cg.zkchange:
 			cg.zkchange = nil
 		case <-cg.checkout:
