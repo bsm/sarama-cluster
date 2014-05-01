@@ -1,11 +1,12 @@
 package cluster
 
 import (
-	"github.com/Shopify/sarama"
-	"github.com/samuel/go-zookeeper/zk"
 	"math"
 	"sort"
 	"time"
+
+	"github.com/Shopify/sarama"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 // A ConsumerGroup operates on all partitions of a single topic. The goal is to ensure

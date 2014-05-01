@@ -3,11 +3,12 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/samuel/go-zookeeper/zk"
 	"path"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 // ZK wraps a zookeeper connection

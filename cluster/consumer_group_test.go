@@ -1,11 +1,12 @@
 package cluster
 
 import (
+	"sort"
+	"time"
+
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"sort"
-	"time"
 )
 
 var _ = Describe("ConsumerGroup", func() {
