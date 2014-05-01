@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"errors"
 	"sort"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+var mockError = errors.New("mock: error")
 
 var _ = Describe("ConsumerGroup", func() {
 	var testClaimRangeCases = []struct {
@@ -50,11 +53,11 @@ var _ = Describe("ConsumerGroup", func() {
 			defer group.Close()
 
 			for i := 0; i < n; i++ {
-				group.Process(func(b *EventBatch) bool {
+				group.Process(func(b *EventBatch) error {
 					for _, e := range b.Events {
 						events <- int64(b.Partition)*1e6 + e.Offset
 					}
-					return true
+					return nil
 				})
 			}
 			errors <- nil
@@ -62,16 +65,16 @@ var _ = Describe("ConsumerGroup", func() {
 
 		BeforeEach(func() {
 			zk, err = NewZK([]string{"localhost:22181"}, 1e9)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			client, err = sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &sarama.ClientConfig{
 				MetadataRetries: 30,
 				WaitForElection: time.Second,
 			})
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			subject, err = NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		AfterEach(func() {
@@ -91,7 +94,7 @@ var _ = Describe("ConsumerGroup", func() {
 
 		It("can be created & closed", func() {
 			lst, _, err := zk.Consumers(tnG)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(lst).To(HaveLen(1))
 			Expect(subject.Close()).To(BeNil())
 			subject = nil
@@ -100,55 +103,53 @@ var _ = Describe("ConsumerGroup", func() {
 		It("should claim partitions", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}).Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 		})
 
 		It("should release partitions & rebalance when new consumers join", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}).Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
 			other, err := NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			defer other.Close()
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}).Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
+			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}).Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
+			}, "2s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
 			third, err := NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			defer third.Close()
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}).Should(Equal([]int32{0, 1, 2, 3}))
+			}, "2s").Should(Equal([]int32{0, 1, 2, 3}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}).Should(Equal([]int32{4, 5, 6, 7}))
+			}, "2s").Should(Equal([]int32{4, 5, 6, 7}))
 
 			Eventually(func() []int32 {
 				return third.Claims()
-			}).Should(Equal([]int32{8, 9, 10, 11}))
+			}, "2s").Should(Equal([]int32{8, 9, 10, 11}))
 		})
 
 		It("should checkout individual consumers", func() {
 			partition := int32(-1)
-			ran, err := subject.Checkout(func(c *PartitionConsumer) bool { partition = c.partition; return false })
-			Expect(err).To(BeNil())
-			Expect(ran).To(BeFalse())
+			err := subject.Checkout(func(c *PartitionConsumer) error { partition = c.partition; return DiscardCommit })
+			Expect(err).NotTo(HaveOccurred())
 			Expect(partition).To(Equal(int32(0)))
 			num, _ := subject.Offset(0)
 			Expect(num).To(Equal(int64(0)))
 
-			ran, err = subject.Checkout(func(c *PartitionConsumer) bool { partition = c.partition; return true })
-			Expect(err).To(BeNil())
-			Expect(ran).To(BeTrue())
+			err = subject.Checkout(func(c *PartitionConsumer) error { partition = c.partition; return DiscardCommit })
+			Expect(err).NotTo(HaveOccurred())
 			Expect(partition).To(Equal(int32(1)))
 			num, _ = subject.Offset(1)
 			Expect(num).To(Equal(int64(0)))
@@ -158,9 +159,8 @@ var _ = Describe("ConsumerGroup", func() {
 			was, _ := subject.Offset(0)
 
 			var batch *EventBatch
-			ran, err := subject.Process(func(b *EventBatch) bool { batch = b; return true })
-			Expect(err).To(BeNil())
-			Expect(ran).To(BeTrue())
+			err := subject.Process(func(b *EventBatch) error { batch = b; return nil })
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(batch).NotTo(BeNil())
 			Expect(batch.Events).To(HaveLen(10))
@@ -171,12 +171,19 @@ var _ = Describe("ConsumerGroup", func() {
 
 		It("should skip commits if requested", func() {
 			was, _ := subject.Offset(0)
-			ran, err := subject.Process(func(b *EventBatch) bool { return false })
-			Expect(err).To(BeNil())
-			Expect(ran).To(BeTrue())
+			err := subject.Process(func(b *EventBatch) error { return DiscardCommit })
+			Expect(err).NotTo(HaveOccurred())
 
 			now, _ := subject.Offset(0)
 			Expect(now).To(Equal(was))
+		})
+
+		It("should propagate errors", func() {
+			err := subject.Checkout(func(c *PartitionConsumer) error { return mockError })
+			Expect(err).To(Equal(mockError))
+
+			err = subject.Process(func(b *EventBatch) error { return mockError })
+			Expect(err).To(Equal(mockError))
 		})
 
 		It("should consume uniquely across all consumers within a group", func() {

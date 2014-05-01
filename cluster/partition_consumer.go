@@ -17,6 +17,21 @@ type EventBatch struct {
 	Events    []sarama.ConsumerEvent
 }
 
+// Returns true if starts with an OffsetOutOfRange error
+func (b *EventBatch) offsetIsOutOfRange() bool {
+	if b == nil || len(b.Events) < 1 {
+		return false
+	}
+
+	err := b.Events[0].Err
+	if err == nil {
+		return false
+	}
+
+	kerr, ok := err.(sarama.KError)
+	return ok && kerr == sarama.OffsetOutOfRange
+}
+
 // PartitionConsumer can consume a single partition of a single topic
 type PartitionConsumer struct {
 	stream    EventStream
@@ -74,7 +89,7 @@ func (p *PartitionConsumer) Fetch() *EventBatch {
 		event := <-events
 		batch.Events[i] = *event
 
-		if event.Offset > p.offset {
+		if event.Err == nil && event.Offset > p.offset {
 			p.offset = event.Offset
 		}
 	}

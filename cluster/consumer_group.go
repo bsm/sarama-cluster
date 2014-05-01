@@ -1,12 +1,18 @@
 package cluster
 
 import (
+	"errors"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/samuel/go-zookeeper/zk"
+)
+
+var (
+	DiscardCommit = errors.New("sarama: commit discarded")
+	NoCheckout    = errors.New("sarama: not checkout")
 )
 
 // A ConsumerGroup operates on all partitions of a single topic. The goal is to ensure
@@ -86,31 +92,44 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 }
 
 // Checkout applies a callback function to a single partition consumer.
-// The latest consumer offset is automatically comitted to zookeeper if the callback returns true.
-// Returns true if the callback was run, otherwise false, may return an error if the commit failed.
-func (cg *ConsumerGroup) Checkout(callback func(*PartitionConsumer) bool) (ran bool, err error) {
+// The latest consumer offset is automatically comitted to zookeeper if successful.
+// The callback may return a DiscardCommit error to skip the commit silently.
+// Returns an error if any, but may also return a NoCheckout error to indicate
+// that no partition was available. You should add an artificial delay keep your CPU cool.
+func (cg *ConsumerGroup) Checkout(callback func(*PartitionConsumer) error) error {
 	cg.checkout <- true
 	claimed := <-cg.claimed
 
-	if claimed != nil && callback(claimed) {
-		ran = true
-		if claimed.offset > 0 {
-			err = cg.Commit(claimed.partition, claimed.offset+1)
-		}
+	if claimed == nil {
+		return NoCheckout
 	}
-	return
+
+	err := callback(claimed)
+	if err == DiscardCommit {
+		err = nil
+	} else if err == nil {
+		err = cg.Commit(claimed.partition, claimed.offset+1)
+	}
+	return err
 }
 
 // Process retrieves a bulk of events and applies a callback.
-// The latest consumer offset is automatically comitted to zookeeper if the callback returns true.
-// Returns true if the callback was run, otherwise false, may return an error if the commit failed.
-func (cg *ConsumerGroup) Process(callback func(*EventBatch) bool) (ran bool, err error) {
-	_, err = cg.Checkout(func(pc *PartitionConsumer) bool {
-		batch := pc.Fetch()
-		ran = batch != nil
-		return ran && callback(batch)
+// The latest consumer offset is automatically comitted to zookeeper if successful.
+// The callback may return a DiscardCommit error to skip the commit silently.
+// Returns an error if any, but may also return a NoCheckout error to indicate
+// that no partition was available. You should add an artificial delay keep your CPU cool.
+func (cg *ConsumerGroup) Process(callback func(*EventBatch) error) error {
+	return cg.Checkout(func(pc *PartitionConsumer) error {
+		if batch := pc.Fetch(); batch != nil {
+			// Try to reset offset on OffsetOutOfRange errors
+			if batch.offsetIsOutOfRange() {
+				return cg.Commit(pc.partition, 0)
+			}
+
+			return callback(batch)
+		}
+		return nil
 	})
-	return
 }
 
 // Commit manually commits an offset for a partition
