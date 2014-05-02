@@ -38,6 +38,7 @@ type ConsumerGroup struct {
 
 	zkchange <-chan zk.Event
 	claimed  chan *PartitionConsumer
+	logger   Loggable
 
 	checkout, force, stopper, done chan bool
 }
@@ -90,6 +91,11 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 
 	go group.signalLoop()
 	return group, nil
+}
+
+// SetLogger allow to pass a logger instance to log rebalance errors, etc
+func (cg *ConsumerGroup) SetLogger(logger Loggable) {
+	cg.logger = logger
 }
 
 // Checkout applies a callback function to a single partition consumer.
@@ -169,18 +175,21 @@ func (cg *ConsumerGroup) signalLoop() {
 	for {
 		// If we have no zk handle, rebalance
 		if cg.zkchange == nil {
-			cg.rebalance()
+			if err := cg.rebalance(); err != nil && cg.logger != nil {
+				cg.logger.Printf("%s rebalance error: %s", cg.name, err.Error())
+			}
 		}
 
-		// If rebalace failed, wait for a stop signal for 1s, then try again
+		// If rebalace failed, check if we had a stop signal, then try again
 		if cg.zkchange == nil {
 			select {
 			case <-cg.stopper:
 				cg.stop()
 				return
-			case <-time.After(time.Second):
-				continue
+			case <-time.After(time.Millisecond):
+				// Continue
 			}
+			continue
 		}
 
 		// If rebalace worked, wait for a stop signal or a zookeeper change or a fetch-request
@@ -220,26 +229,28 @@ func (cg *ConsumerGroup) nextConsumer() *PartitionConsumer {
 }
 
 // Start a rebalance cycle
-func (cg *ConsumerGroup) rebalance() {
+func (cg *ConsumerGroup) rebalance() (err error) {
 	var cids []string
 	var pids []int32
-	var err error
 
 	// Fetch a list of consumers and listen for changes
 	if cids, cg.zkchange, err = cg.zoo.Consumers(cg.name); err != nil {
+		cg.zkchange = nil
 		return
 	}
 
 	// Fetch a list of partition IDs
 	if pids, err = cg.client.Partitions(cg.topic); err != nil {
+		cg.zkchange = nil
 		return
 	}
 
 	// Get leaders for each partition ID
 	parts := make(PartitionSlice, len(pids))
 	for i, pid := range pids {
-		broker, err := cg.client.Leader(cg.topic, pid)
-		if err != nil {
+		var broker *sarama.Broker
+		if broker, err = cg.client.Leader(cg.topic, pid); err != nil {
+			cg.zkchange = nil
 			return
 		}
 		defer broker.Close()
@@ -247,9 +258,11 @@ func (cg *ConsumerGroup) rebalance() {
 	}
 
 	if err = cg.makeClaims(cids, parts); err != nil {
+		cg.zkchange = nil
 		cg.releaseClaims()
 		return
 	}
+	return
 }
 
 func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {

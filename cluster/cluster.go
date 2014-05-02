@@ -19,3 +19,8 @@ func (s PartitionSlice) Less(i, j int) bool {
 	return s[i].Id < s[j].Id
 }
 func (s PartitionSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+// Loggable interface
+type Loggable interface {
+	Printf(string, ...interface{})
+}
