@@ -47,7 +47,7 @@ type ConsumerGroup struct {
 //
 // You MUST call Close() on a consumer to avoid leaks, it will not be garbage-collected automatically when
 // it passes out of scope (this is in addition to calling Close on the underlying client, which is still necessary).
-func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
+func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, logger Loggable, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
 	if config == nil {
 		config = new(sarama.ConsumerConfig)
 	}
@@ -76,6 +76,7 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 		client: client,
 		zoo:    zoo,
 		claims: make([]PartitionConsumer, 0),
+		logger: logger,
 
 		stopper:  make(chan bool),
 		done:     make(chan bool),
@@ -91,11 +92,6 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 
 	go group.signalLoop()
 	return group, nil
-}
-
-// SetLogger allow to pass a logger instance to log rebalance errors, etc
-func (cg *ConsumerGroup) SetLogger(logger Loggable) {
-	cg.logger = logger
 }
 
 // Checkout applies a callback function to a single partition consumer.

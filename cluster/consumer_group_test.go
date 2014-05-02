@@ -45,7 +45,7 @@ var _ = Describe("ConsumerGroup", func() {
 		var consumerConfig = &sarama.ConsumerConfig{MaxWaitTime: 200, EventBufferSize: 10}
 
 		var runConsumerCycle = func(errors chan error, events chan int64, n int) {
-			group, err := NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
+			group, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
 			if err != nil {
 				errors <- err
 				return
@@ -73,7 +73,7 @@ var _ = Describe("ConsumerGroup", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			subject, err = NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
+			subject, err = NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -111,7 +111,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return subject.Claims()
 			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
-			other, err := NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
+			other, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 			defer other.Close()
 
@@ -123,7 +123,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return other.Claims()
 			}, "2s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
-			third, err := NewConsumerGroup(client, zk, tnG, tnT, consumerConfig)
+			third, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 			defer third.Close()
 
