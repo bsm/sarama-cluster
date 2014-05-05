@@ -73,7 +73,7 @@ var _ = Describe("ConsumerGroup", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			subject, err = NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			subject, err = NewConsumerGroup(client, zk, tnG, tnT, mockListener, consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -104,6 +104,14 @@ var _ = Describe("ConsumerGroup", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
 			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+		})
+
+		It("should notify subscribed listener", func() {
+			Eventually(func() int {
+				return len(mockListener)
+			}, "2s").Should(Equal(2))
+			Expect((<-mockListener).Type).To(Equal(REBALANCE_START))
+			Expect((<-mockListener).Type).To(Equal(REBALANCE_OK))
 		})
 
 		It("should release partitions & rebalance when new consumers join", func() {

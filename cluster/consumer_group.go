@@ -38,7 +38,7 @@ type ConsumerGroup struct {
 
 	zkchange <-chan zk.Event
 	claimed  chan *PartitionConsumer
-	logger   Loggable
+	listener chan *Notification
 
 	checkout, force, stopper, done chan bool
 }
@@ -47,7 +47,7 @@ type ConsumerGroup struct {
 //
 // You MUST call Close() on a consumer to avoid leaks, it will not be garbage-collected automatically when
 // it passes out of scope (this is in addition to calling Close on the underlying client, which is still necessary).
-func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, logger Loggable, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
+func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, listener chan *Notification, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
 	if config == nil {
 		config = new(sarama.ConsumerConfig)
 	}
@@ -72,11 +72,11 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 		name:  name,
 		topic: topic,
 
-		config: config,
-		client: client,
-		zoo:    zoo,
-		claims: make([]PartitionConsumer, 0),
-		logger: logger,
+		config:   config,
+		client:   client,
+		zoo:      zoo,
+		claims:   make([]PartitionConsumer, 0),
+		listener: listener,
 
 		stopper:  make(chan bool),
 		done:     make(chan bool),
@@ -171,12 +171,12 @@ func (cg *ConsumerGroup) signalLoop() {
 	for {
 		// If we have no zk handle, rebalance
 		if cg.zkchange == nil {
-			if err := cg.rebalance(); err != nil && cg.logger != nil {
-				cg.logger.Printf("%s rebalance error: %s", cg.name, err.Error())
+			if err := cg.rebalance(); err != nil && cg.listener != nil {
+				cg.listener <- &Notification{Type: REBALANCE_ERROR, Src: cg, Err: err}
 			}
 		}
 
-		// If rebalace failed, check if we had a stop signal, then try again
+		// If rebalance failed, check if we had a stop signal, then try again
 		if cg.zkchange == nil {
 			select {
 			case <-cg.stopper:
@@ -188,7 +188,7 @@ func (cg *ConsumerGroup) signalLoop() {
 			continue
 		}
 
-		// If rebalace worked, wait for a stop signal or a zookeeper change or a fetch-request
+		// If rebalance worked, wait for a stop signal or a zookeeper change or a fetch-request
 		select {
 		case <-cg.stopper:
 			cg.stop()
@@ -228,6 +228,10 @@ func (cg *ConsumerGroup) nextConsumer() *PartitionConsumer {
 func (cg *ConsumerGroup) rebalance() (err error) {
 	var cids []string
 	var pids []int32
+
+	if cg.listener != nil {
+		cg.listener <- &Notification{Type: REBALANCE_START, Src: cg}
+	}
 
 	// Fetch a list of consumers and listen for changes
 	if cids, cg.zkchange, err = cg.zoo.Consumers(cg.name); err != nil {
@@ -276,6 +280,10 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 		}
 
 		cg.claims = append(cg.claims, *pc)
+	}
+
+	if cg.listener != nil {
+		cg.listener <- &Notification{Type: REBALANCE_OK, Src: cg}
 	}
 	return nil
 }

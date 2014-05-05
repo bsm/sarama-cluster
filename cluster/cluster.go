@@ -1,5 +1,11 @@
 package cluster
 
+const (
+	REBALANCE_START uint8 = iota + 1
+	REBALANCE_OK
+	REBALANCE_ERROR
+)
+
 // COMMON TYPES
 
 // Partition information
@@ -20,7 +26,9 @@ func (s PartitionSlice) Less(i, j int) bool {
 }
 func (s PartitionSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
-// Loggable interface
-type Loggable interface {
-	Printf(string, ...interface{})
+// A subscribable notification
+type Notification struct {
+	Type uint8
+	Src  *ConsumerGroup
+	Err  error
 }

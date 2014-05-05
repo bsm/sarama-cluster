@@ -57,6 +57,9 @@ func TestSuite(t *testing.T) {
 	for i := 0; i < 10000; i++ {
 		checkOrFail(t, producer.SendMessage(tnT, nil, sarama.ByteEncoder([]byte("PLAINDATA"))))
 	}
+	BeforeEach(func() {
+		mockListener = make(chan *Notification, 1000)
+	})
 	RunSpecs(t, "sarama/cluster")
 }
 
@@ -66,3 +69,4 @@ func TestSuite(t *testing.T) {
 
 var tnG = "sarama-cluster-group"
 var tnT = "sarama-cluster-topic"
+var mockListener chan *Notification
