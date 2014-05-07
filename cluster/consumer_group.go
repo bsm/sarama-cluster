@@ -94,6 +94,16 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 	return group, nil
 }
 
+// Name exposes the group name
+func (cg *ConsumerGroup) Name() string {
+	return cg.name
+}
+
+// Topic exposes the group topic
+func (cg *ConsumerGroup) Topic() string {
+	return cg.topic
+}
+
 // Checkout applies a callback function to a single partition consumer.
 // The latest consumer offset is automatically comitted to zookeeper if successful.
 // The callback may return a DiscardCommit error to skip the commit silently.
