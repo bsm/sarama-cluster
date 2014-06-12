@@ -35,6 +35,8 @@ var _ = Describe("ConsumerGroup", func() {
 		{"N3", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
 		{"N1", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{0, 1, 2}},
 		{"N2", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{3, 4}},
+		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{3}},
+		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{}},
 	}
 
 	Describe("instances", func() {

@@ -276,9 +276,23 @@ func (cg *ConsumerGroup) rebalance() (err error) {
 }
 
 func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
-	cg.releaseClaims()
+	current := make(map[int32]bool, len(cg.claims))
+	for _, pt := range cg.claims {
+		current[pt.partition] = true
+	}
 
-	for _, part := range cg.claimRange(cids, parts) {
+	future := cg.claimRange(cids, parts)
+	unchanged := len(current) == len(future)
+	for _, pt := range future {
+		unchanged = unchanged && current[pt.Id]
+	}
+	if unchanged {
+		return nil
+	}
+
+	cg.releaseClaims()
+	for _, part := range future {
+
 		pc, err := NewPartitionConsumer(cg, part.Id)
 		if err != nil {
 			return err
@@ -306,20 +320,22 @@ func (cg *ConsumerGroup) claimRange(cids []string, parts PartitionSlice) Partiti
 	cpos := sort.SearchStrings(cids, cg.id)
 	clen := len(cids)
 	plen := len(parts)
-	if cpos >= clen || cpos >= plen {
-		return make(PartitionSlice, 0)
-	}
 
 	step := int(math.Ceil(float64(plen) / float64(clen)))
 	if step < 1 {
 		step = 1
 	}
 
+	first := cpos * step
+	if cpos >= clen || first >= plen {
+		return make(PartitionSlice, 0)
+	}
+
 	last := (cpos + 1) * step
 	if last > plen {
 		last = plen
 	}
-	return parts[cpos*step : last]
+	return parts[first:last]
 }
 
 // Releases all claims
