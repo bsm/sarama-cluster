@@ -15,7 +15,7 @@ test: deps kill-kafka kill-zookeeper start-zookeeper start-kafka
 .PHONY: test
 
 deps:
-	go get ./...
+	go get -t ./...
 
 start-zookeeper: $(KAFKA_ROOT) /tmp/sarama-cluster-test
 	$(JENV_VARS) $(KAFKA_ROOT)/bin/kafka-run-class.sh -name zookeeper -loggc org.apache.zookeeper.server.ZooKeeperServerMain test/zookeeper.properties & echo "$$!" > "test/zookeeper.pid"
