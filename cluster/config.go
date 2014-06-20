@@ -1,6 +1,6 @@
 package cluster
 
-import "github.com/dim/sarama"
+import "github.com/Shopify/sarama"
 
 // Config borrows many options from sarama.ConsumerConfig
 type Config struct {
