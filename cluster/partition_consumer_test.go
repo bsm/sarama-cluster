@@ -1,8 +1,6 @@
 package cluster
 
 import (
-	"time"
-
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -14,12 +12,11 @@ var _ = Describe("PartitionConsumer", func() {
 
 	BeforeEach(func() {
 		stream = newMockStream()
-		config := new(Config)
-		config.validate()
-		subject = &PartitionConsumer{partition: 3, topic: tnT, stream: stream, config: config}
+		subject = &PartitionConsumer{partition: 3, topic: tnT, stream: stream}
 	})
 
 	It("should fetch batches of events (if available)", func() {
+		Expect(subject.Fetch()).To(BeNil())
 		stream.events <- &sarama.ConsumerEvent{}
 		stream.events <- &sarama.ConsumerEvent{}
 		batch := subject.Fetch()
@@ -27,12 +24,7 @@ var _ = Describe("PartitionConsumer", func() {
 		Expect(batch.Topic).To(Equal(tnT))
 		Expect(batch.Partition).To(Equal(int32(3)))
 		Expect(batch.Events).To(HaveLen(2))
-	})
-
-	It("should wait for events", func() {
-		start := time.Now()
 		Expect(subject.Fetch()).To(BeNil())
-		Expect(time.Now().Sub(start)).To(BeNumerically("~", 100*time.Millisecond, 10*time.Millisecond))
 	})
 
 	It("should close consumers", func() {

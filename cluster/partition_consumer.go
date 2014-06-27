@@ -1,8 +1,6 @@
 package cluster
 
 import (
-	"time"
-
 	"github.com/Shopify/sarama"
 )
 
@@ -40,7 +38,6 @@ type PartitionConsumer struct {
 	topic     string
 	partition int32
 	offset    int64
-	config    *Config
 }
 
 // NewPartitionConsumer creates a new partition consumer instance
@@ -69,7 +66,6 @@ func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionCons
 
 	return &PartitionConsumer{
 		stream:    stream,
-		config:    group.config,
 		topic:     group.topic,
 		partition: partition,
 	}, nil
@@ -78,17 +74,8 @@ func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionCons
 // Fetch returns a batch of events
 // WARNING: may return nil if not events are available
 func (p *PartitionConsumer) Fetch() *EventBatch {
-	start := time.Now()
-	limit := time.Duration(p.config.EventWaitTime) * time.Millisecond
-
-	for len(p.stream.Events()) < int(p.config.EventMinCount) {
-		time.Sleep(10 * time.Millisecond)
-		if start.Add(limit).Before(time.Now()) {
-			break
-		}
-	}
-
-	evtlen := len(p.stream.Events())
+	events := p.stream.Events()
+	evtlen := len(events)
 	if evtlen < 1 {
 		return nil
 	}
@@ -99,7 +86,7 @@ func (p *PartitionConsumer) Fetch() *EventBatch {
 		Events:    make([]sarama.ConsumerEvent, evtlen),
 	}
 	for i := 0; i < evtlen; i++ {
-		event := <-p.stream.Events()
+		event := <-events
 		batch.Events[i] = *event
 
 		if event.Err == nil && event.Offset > p.offset {

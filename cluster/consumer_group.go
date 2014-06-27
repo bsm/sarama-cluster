@@ -31,7 +31,7 @@ var (
 type ConsumerGroup struct {
 	id, name, topic string
 
-	config *Config
+	config *sarama.ConsumerConfig
 	client *sarama.Client
 	zoo    *ZK
 	claims []PartitionConsumer
@@ -47,13 +47,13 @@ type ConsumerGroup struct {
 //
 // You MUST call Close() on a consumer to avoid leaks, it will not be garbage-collected automatically when
 // it passes out of scope (this is in addition to calling Close on the underlying client, which is still necessary).
-func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, listener chan *Notification, config *Config) (group *ConsumerGroup, err error) {
+func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, listener chan *Notification, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
 	if config == nil {
-		config = new(Config)
+		config = new(sarama.ConsumerConfig)
 	}
 
 	// Validate configuration
-	if err = config.validate(); err != nil {
+	if err = validateConsumerConfig(config); err != nil {
 		return
 	} else if topic == "" {
 		return nil, sarama.ConfigurationError("Empty topic")
@@ -345,4 +345,33 @@ func (cg *ConsumerGroup) releaseClaims() {
 		cg.zoo.Release(cg.name, cg.topic, pc.partition, cg.id)
 	}
 	cg.claims = cg.claims[:0]
+}
+
+// Validate consumer config, maybe sarama can expose a public ConsumerConfig.Validate() one day
+func validateConsumerConfig(config *sarama.ConsumerConfig) error {
+	if config.DefaultFetchSize < 0 {
+		return sarama.ConfigurationError("Invalid DefaultFetchSize")
+	} else if config.DefaultFetchSize == 0 {
+		config.DefaultFetchSize = 1024
+	}
+
+	if config.MinFetchSize < 0 {
+		return sarama.ConfigurationError("Invalid MinFetchSize")
+	} else if config.MinFetchSize == 0 {
+		config.MinFetchSize = 1
+	}
+
+	if config.MaxWaitTime <= 0 {
+		return sarama.ConfigurationError("Invalid MaxWaitTime")
+	} else if config.MaxWaitTime < 100 {
+		sarama.Logger.Println("ConsumerConfig.MaxWaitTime is very low, which can cause high CPU and network usage. See sarama documentation for details.")
+	}
+
+	if config.MaxMessageSize < 0 {
+		return sarama.ConfigurationError("Invalid MaxMessageSize")
+	} else if config.EventBufferSize < 0 {
+		return sarama.ConfigurationError("Invalid EventBufferSize")
+	}
+
+	return nil
 }
