@@ -1,8 +1,6 @@
 package cluster
 
-import (
-	"github.com/Shopify/sarama"
-)
+import "github.com/Shopify/sarama"
 
 // EventStream is an abstraction of a sarama.Consumer
 type EventStream interface {
@@ -44,11 +42,11 @@ type PartitionConsumer struct {
 func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionConsumer, error) {
 	config := sarama.ConsumerConfig{
 		DefaultFetchSize: group.config.DefaultFetchSize,
-		EventBufferSize:  group.config.EventBufferSize,
+		MinFetchSize:     group.config.MinFetchSize,
 		MaxMessageSize:   group.config.MaxMessageSize,
 		MaxWaitTime:      group.config.MaxWaitTime,
-		MinFetchSize:     group.config.MinFetchSize,
 		OffsetMethod:     sarama.OffsetMethodOldest,
+		EventBufferSize:  group.config.EventBufferSize,
 	}
 
 	offset, err := group.Offset(partition)

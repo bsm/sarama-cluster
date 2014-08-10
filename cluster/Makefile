@@ -8,9 +8,7 @@ JENV_VARS= KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:test/log4j.properties" K
 default: test
 
 test: deps kill-kafka kill-zookeeper start-zookeeper start-kafka
-	go test
-	@make kill-kafka
-	@make kill-zookeeper
+	go test; make kill-kafka kill-zookeeper
 
 .PHONY: test
 

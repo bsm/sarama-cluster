@@ -31,14 +31,14 @@ var (
 type ConsumerGroup struct {
 	id, name, topic string
 
-	config *sarama.ConsumerConfig
 	client *sarama.Client
+	config *sarama.ConsumerConfig
 	zoo    *ZK
 	claims []PartitionConsumer
 
 	zkchange <-chan zk.Event
 	claimed  chan *PartitionConsumer
-	listener chan *Notification
+	notify   Notifier
 
 	checkout, force, stopper, done chan bool
 }
@@ -47,9 +47,13 @@ type ConsumerGroup struct {
 //
 // You MUST call Close() on a consumer to avoid leaks, it will not be garbage-collected automatically when
 // it passes out of scope (this is in addition to calling Close on the underlying client, which is still necessary).
-func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, listener chan *Notification, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
+func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string, notify Notifier, config *sarama.ConsumerConfig) (group *ConsumerGroup, err error) {
 	if config == nil {
 		config = new(sarama.ConsumerConfig)
+	}
+
+	if notify == nil {
+		notify = &LogNotifier{Logger}
 	}
 
 	// Validate configuration
@@ -72,11 +76,11 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 		name:  name,
 		topic: topic,
 
-		config:   config,
-		client:   client,
-		zoo:      zoo,
-		claims:   make([]PartitionConsumer, 0),
-		listener: listener,
+		config: config,
+		client: client,
+		zoo:    zoo,
+		claims: make([]PartitionConsumer, 0),
+		notify: notify,
 
 		stopper:  make(chan bool),
 		done:     make(chan bool),
@@ -137,11 +141,25 @@ func (cg *ConsumerGroup) Process(callback func(*EventBatch) error) error {
 
 			// Try to reset offset on OffsetOutOfRange errors
 			if batch.offsetIsOutOfRange() {
-				if err := cg.Commit(pc.partition, 0); err != nil {
+				cur, err := cg.Offset(pc.partition)
+				if err != nil {
 					return err
 				}
+
+				min, err := cg.client.GetOffset(cg.topic, pc.partition, sarama.EarliestOffset)
+				if err != nil {
+					return err
+				}
+
+				if cur < min {
+					if err := cg.Commit(pc.partition, 0); err != nil {
+						return err
+					}
+				}
+
+				cg.releaseClaims()
 				cg.force <- true
-				batch.Events = batch.Events[:1]
+				return sarama.OffsetOutOfRange
 			}
 
 			return callback(batch)
@@ -181,8 +199,8 @@ func (cg *ConsumerGroup) signalLoop() {
 	for {
 		// If we have no zk handle, rebalance
 		if cg.zkchange == nil {
-			if err := cg.rebalance(); err != nil && cg.listener != nil {
-				cg.listener <- &Notification{Type: REBALANCE_ERROR, Src: cg, Err: err}
+			if err := cg.rebalance(); err != nil {
+				cg.notify.RebalanceError(cg, err)
 			}
 		}
 
@@ -238,10 +256,7 @@ func (cg *ConsumerGroup) nextConsumer() *PartitionConsumer {
 func (cg *ConsumerGroup) rebalance() (err error) {
 	var cids []string
 	var pids []int32
-
-	if cg.listener != nil {
-		cg.listener <- &Notification{Type: REBALANCE_START, Src: cg}
-	}
+	cg.notify.RebalanceStart(cg)
 
 	// Fetch a list of consumers and listen for changes
 	if cids, cg.zkchange, err = cg.zoo.Consumers(cg.name); err != nil {
@@ -263,7 +278,6 @@ func (cg *ConsumerGroup) rebalance() (err error) {
 			cg.zkchange = nil
 			return
 		}
-		defer broker.Close()
 		parts[i] = Partition{Id: pid, Addr: broker.Addr()}
 	}
 
@@ -306,9 +320,7 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 		cg.claims = append(cg.claims, *pc)
 	}
 
-	if cg.listener != nil {
-		cg.listener <- &Notification{Type: REBALANCE_OK, Src: cg}
-	}
+	cg.notify.RebalanceOK(cg)
 	return nil
 }
 

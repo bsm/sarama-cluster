@@ -3,7 +3,6 @@ package cluster
 import (
 	"errors"
 	"sort"
-	"time"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -41,13 +40,12 @@ var _ = Describe("ConsumerGroup", func() {
 
 	Describe("instances", func() {
 		var zk *ZK
-		var client *sarama.Client
 		var subject *ConsumerGroup
+		var client *sarama.Client
 		var err error
-		var consumerConfig = &sarama.ConsumerConfig{MaxWaitTime: 200, EventBufferSize: 10}
 
 		var runConsumerCycle = func(errors chan error, events chan int64, n int) {
-			group, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			group, err := NewConsumerGroup(client, zk, tnG, tnT, nil, &consumerConfig)
 			if err != nil {
 				errors <- err
 				return
@@ -69,13 +67,10 @@ var _ = Describe("ConsumerGroup", func() {
 			zk, err = NewZK([]string{"localhost:22181"}, 1e9)
 			Expect(err).NotTo(HaveOccurred())
 
-			client, err = sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &sarama.ClientConfig{
-				MetadataRetries: 30,
-				WaitForElection: time.Second,
-			})
+			client, err = sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &clientConfig)
 			Expect(err).NotTo(HaveOccurred())
 
-			subject, err = NewConsumerGroup(client, zk, tnG, tnT, mockListener, consumerConfig)
+			subject, err = NewConsumerGroup(client, zk, tnG, tnT, tnN, &consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -109,45 +104,43 @@ var _ = Describe("ConsumerGroup", func() {
 		})
 
 		It("should notify subscribed listener", func() {
-			Eventually(func() int {
-				return len(mockListener)
-			}, "2s").Should(Equal(2))
-			Expect((<-mockListener).Type).To(Equal(REBALANCE_START))
-			Expect((<-mockListener).Type).To(Equal(REBALANCE_OK))
+			Eventually(func() []string {
+				return tnN.msgs
+			}, "2s").Should(HaveLen(2))
 		})
 
 		It("should release partitions & rebalance when new consumers join", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
-			other, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			other, err := NewConsumerGroup(client, zk, tnG, tnT, nil, &consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 			defer other.Close()
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
+			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}, "2s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
+			}, "5s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
-			third, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			third, err := NewConsumerGroup(client, zk, tnG, tnT, nil, &consumerConfig)
 			Expect(err).NotTo(HaveOccurred())
 			defer third.Close()
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "2s").Should(Equal([]int32{0, 1, 2, 3}))
+			}, "5s").Should(Equal([]int32{0, 1, 2, 3}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}, "2s").Should(Equal([]int32{4, 5, 6, 7}))
+			}, "5s").Should(Equal([]int32{4, 5, 6, 7}))
 
 			Eventually(func() []int32 {
 				return third.Claims()
-			}, "2s").Should(Equal([]int32{8, 9, 10, 11}))
+			}, "5s").Should(Equal([]int32{8, 9, 10, 11}))
 		})
 
 		It("should checkout individual consumers", func() {

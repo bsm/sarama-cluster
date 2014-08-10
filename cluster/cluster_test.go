@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"fmt"
+
 	"sort"
 	"testing"
 	"time"
@@ -30,35 +32,31 @@ var _ = Describe("PartitionSlice", func() {
  * TEST HOOK
  *********************************************************************/
 
-func checkOrFail(t *testing.T, err error) {
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSuite(t *testing.T) {
-	RegisterFailHandler(Fail)
-
-	client, err := sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &sarama.ClientConfig{
-		MetadataRetries: 30,
-		WaitForElection: time.Second,
-	})
-	checkOrFail(t, err)
+var _ = BeforeSuite(func() {
+	client, err := sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &clientConfig)
+	Expect(err).NotTo(HaveOccurred())
 	defer client.Close()
 
 	producer, err := sarama.NewProducer(client, &sarama.ProducerConfig{
-		Partitioner:      sarama.NewHashPartitioner(),
-		MaxBufferedBytes: 1024 * 1024,
-		MaxBufferTime:    1000,
+		Partitioner:                sarama.NewHashPartitioner(),
+		MaxBufferedBytes:           1024 * 1024,
+		MaxBufferTime:              time.Second,
+		BackPressureThresholdBytes: 10 * 1024 * 1024,
 	})
-	checkOrFail(t, err)
+	Expect(err).NotTo(HaveOccurred())
 	defer producer.Close()
 
-	for i := 0; i < 10000; i++ {
-		checkOrFail(t, producer.SendMessage(tnT, nil, sarama.ByteEncoder([]byte("PLAINDATA"))))
+	for i := 0; i < 1000; i++ {
+		Eventually(func() error {
+			return producer.SendMessage(tnT, nil, sarama.ByteEncoder([]byte("PLAINDATA")))
+		}).ShouldNot(HaveOccurred(), "50ms")
 	}
+})
+
+func TestSuite(t *testing.T) {
+	RegisterFailHandler(Fail)
 	BeforeEach(func() {
-		mockListener = make(chan *Notification, 1000)
+		tnN = &mockNotifier{msgs: make([]string, 0)}
 	})
 	RunSpecs(t, "sarama/cluster")
 }
@@ -69,4 +67,24 @@ func TestSuite(t *testing.T) {
 
 var tnG = "sarama-cluster-group"
 var tnT = "sarama-cluster-topic"
-var mockListener chan *Notification
+var tnN *mockNotifier
+var clientConfig = sarama.ClientConfig{
+	MetadataRetries: 30,
+	WaitForElection: time.Second,
+}
+var consumerConfig = sarama.ConsumerConfig{
+	MaxWaitTime:     600 * time.Millisecond,
+	EventBufferSize: 10,
+}
+
+type mockNotifier struct{ msgs []string }
+
+func (n *mockNotifier) RebalanceStart(cg *ConsumerGroup) {
+	n.msgs = append(n.msgs, fmt.Sprintf("rebalance start %s", cg.Name()))
+}
+func (n *mockNotifier) RebalanceOK(cg *ConsumerGroup) {
+	n.msgs = append(n.msgs, fmt.Sprintf("rebalance ok %s", cg.Name()))
+}
+func (n *mockNotifier) RebalanceError(cg *ConsumerGroup, err error) {
+	n.msgs = append(n.msgs, fmt.Sprintf("rebalance error %s: %s", cg.Name(), err.Error()))
+}
