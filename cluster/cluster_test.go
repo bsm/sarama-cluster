@@ -33,16 +33,16 @@ var _ = Describe("PartitionSlice", func() {
  *********************************************************************/
 
 var _ = BeforeSuite(func() {
-	client, err := sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, &clientConfig)
+	clientConfig.WaitForElection = 2 * time.Second
+	consumerConfig.EventBufferSize = 10
+
+	client, err := sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, clientConfig)
 	Expect(err).NotTo(HaveOccurred())
 	defer client.Close()
 
-	producer, err := sarama.NewProducer(client, &sarama.ProducerConfig{
-		Partitioner:                sarama.NewHashPartitioner(),
-		MaxBufferedBytes:           1024 * 1024,
-		MaxBufferTime:              time.Second,
-		BackPressureThresholdBytes: 10 * 1024 * 1024,
-	})
+	pdsConfig := sarama.NewProducerConfig()
+	pdsConfig.Partitioner = sarama.NewHashPartitioner()
+	producer, err := sarama.NewProducer(client, pdsConfig)
 	Expect(err).NotTo(HaveOccurred())
 	defer producer.Close()
 
@@ -68,14 +68,8 @@ func TestSuite(t *testing.T) {
 var tnG = "sarama-cluster-group"
 var tnT = "sarama-cluster-topic"
 var tnN *mockNotifier
-var clientConfig = sarama.ClientConfig{
-	MetadataRetries: 30,
-	WaitForElection: time.Second,
-}
-var consumerConfig = sarama.ConsumerConfig{
-	MaxWaitTime:     600 * time.Millisecond,
-	EventBufferSize: 10,
-}
+var clientConfig = sarama.NewClientConfig()
+var consumerConfig = sarama.NewConsumerConfig()
 
 type mockNotifier struct{ msgs []string }
 
