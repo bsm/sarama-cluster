@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -152,14 +153,14 @@ func (cg *ConsumerGroup) Process(callback func(*EventBatch) error) error {
 				}
 
 				if cur < min {
-					if err := cg.Commit(pc.partition, 0); err != nil {
+					if err := cg.Commit(pc.partition, min); err != nil {
 						return err
 					}
 				}
 
 				cg.releaseClaims()
 				cg.force <- true
-				return sarama.OffsetOutOfRange
+				return fmt.Errorf("kafka: The requested offset is outside the range of offsets maintained by the server for %s-%d, current: %d, min: %d.", cg.topic, pc.partition, cur, min)
 			}
 
 			return callback(batch)
