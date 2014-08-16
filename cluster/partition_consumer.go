@@ -12,7 +12,7 @@ type EventStream interface {
 type EventBatch struct {
 	Topic     string
 	Partition int32
-	Events    []sarama.ConsumerEvent
+	Events    []*sarama.ConsumerEvent
 }
 
 // Returns true if starts with an OffsetOutOfRange error
@@ -81,11 +81,11 @@ func (p *PartitionConsumer) Fetch() *EventBatch {
 	batch := &EventBatch{
 		Topic:     p.topic,
 		Partition: p.partition,
-		Events:    make([]sarama.ConsumerEvent, evtlen),
+		Events:    make([]*sarama.ConsumerEvent, evtlen),
 	}
 	for i := 0; i < evtlen; i++ {
 		event := <-events
-		batch.Events[i] = *event
+		batch.Events[i] = event
 
 		if event.Err == nil && event.Offset > p.offset {
 			p.offset = event.Offset
