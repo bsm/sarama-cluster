@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"errors"
+	"os"
 	"sort"
 
 	. "github.com/onsi/ginkgo"
@@ -11,78 +12,84 @@ import (
 var mockError = errors.New("mock: error")
 
 var _ = Describe("ConsumerGroup", func() {
-	var testClaimRangeCases = []struct {
-		id   string
-		cids []string
-		pids []int32
-		exp  []int32
-	}{
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{0}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{1}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{2}},
 
-		{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{0, 3, 2, 1}, []int32{2}},
-		{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{1, 3, 5, 7}, []int32{5}},
-
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{0}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{1}},
-
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{0}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{1, 2}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{3}},
-
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{0, 2}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{4}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{6, 8}},
-
-		{"N1", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{0, 1, 2}},
-		{"N2", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{3, 4}},
-
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0}, []int32{0}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
-
-		{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{0}},
-		{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{1}},
-		{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{}},
-		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{2}},
-		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{3}},
-
-		{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{0, 1}},
-		{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{2, 3, 4}},
-		{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{5, 6}},
-		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{7, 8, 9}},
-		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{10, 11}},
-
-		{"N9", []string{"N1", "N2"}, []int32{0, 1}, []int32{}},
+	var newCG = func() (*ConsumerGroup, error) {
+		return NewConsumerGroup(testState.client, testState.zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
 	}
+
+	It("should determine which partitions to claim", func() {
+
+		testCases := []struct {
+			id   string
+			cids []string
+			pids []int32
+			exp  []int32
+		}{
+			{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{0}},
+			{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{1}},
+			{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{2}},
+
+			{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{0, 3, 2, 1}, []int32{2}},
+			{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{1, 3, 5, 7}, []int32{5}},
+
+			{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{0}},
+			{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{}},
+			{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{1}},
+
+			{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{0}},
+			{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{1, 2}},
+			{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{3}},
+
+			{"N1", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{0, 2}},
+			{"N2", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{4}},
+			{"N3", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{6, 8}},
+
+			{"N1", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{0, 1, 2}},
+			{"N2", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{3, 4}},
+
+			{"N1", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
+			{"N2", []string{"N1", "N2", "N3"}, []int32{0}, []int32{0}},
+			{"N3", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
+
+			{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{0}},
+			{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{1}},
+			{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{}},
+			{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{2}},
+			{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{3}},
+
+			{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{0, 1}},
+			{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{2, 3, 4}},
+			{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{5, 6}},
+			{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{7, 8, 9}},
+			{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{10, 11}},
+
+			{"N9", []string{"N1", "N2"}, []int32{0, 1}, []int32{}},
+		}
+
+		for _, item := range testCases {
+			// Prepare
+			group := &ConsumerGroup{id: item.id}
+			parts := make(PartitionSlice, len(item.pids))
+			for i, pid := range item.pids {
+				parts[i] = Partition{ID: pid, Addr: "locahost:9092"}
+			}
+
+			// Pseudo-shuffle
+			sort.StringSlice(item.cids).Swap(0, len(item.cids)-1)
+			parts.Swap(0, len(parts)-1)
+
+			// Claim and compare
+			parts = group.claimRange(item.cids, parts)
+			actual := make([]int32, len(parts))
+			for i, part := range parts {
+				actual[i] = part.ID
+			}
+			Expect(actual).To(Equal(item.exp), "Case: %+v", item)
+		}
+	})
 
 	Describe("instances", func() {
 		var subject *ConsumerGroup
-
-		var newCG = func() (*ConsumerGroup, error) {
-			return NewConsumerGroup(testState.client, testState.zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
-		}
-
-		var runConsumerCycle = func(errors chan error, events chan int64, n int) {
-			group, err := newCG()
-			if err != nil {
-				errors <- err
-				return
-			}
-			defer group.Close()
-
-			for i := 0; i < n; i++ {
-				group.Process(func(b *EventBatch) error {
-					for _, e := range b.Events {
-						events <- int64(b.Partition)*1e6 + e.Offset
-					}
-					return nil
-				})
-			}
-			errors <- nil
-		}
 
 		BeforeEach(func() {
 			var err error
@@ -200,46 +207,72 @@ var _ = Describe("ConsumerGroup", func() {
 			Expect(err).To(Equal(mockError))
 		})
 
-		It("should consume uniquely across all consumers within a group", func() {
-			errors := make(chan error, 5)
-			events := make(chan int64, 1e5)
-			go runConsumerCycle(errors, events, 24)
-			go runConsumerCycle(errors, events, 96)
-			go runConsumerCycle(errors, events, 2)
-			go runConsumerCycle(errors, events, 48)
-			go runConsumerCycle(errors, events, 24)
-
-			for i := 0; i < 5; i++ {
-				Expect(<-errors).NotTo(HaveOccurred())
-			}
-			consumed := make(map[int64]bool)
-			for i := 0; i < len(events); i++ {
-				evt := <-events
-				Expect(consumed[evt]).To(BeFalse())
-				consumed[evt] = true
-			}
-		})
-
 	})
 
-	It("should determine which partitions to claim", func() {
-		for _, item := range testClaimRangeCases {
-			group := &ConsumerGroup{id: item.id}
-			parts := make(PartitionSlice, len(item.pids))
-			for i, pid := range item.pids {
-				parts[i] = Partition{ID: pid, Addr: "locahost:9092"}
-			}
-			sort.StringSlice(item.cids).Swap(0, len(item.cids)-1)
-			parts.Swap(0, len(parts)-1)
+	Describe("fuzzing", func() {
+		if os.Getenv("SLOW") == "" {
 
-			parts = group.claimRange(item.cids, parts)
-			actual := make([]int32, len(parts))
-			for i, part := range parts {
-				actual[i] = part.ID
-			}
+			PIt("tests are disabled, please run with SLOW=1")
 
-			Expect(actual).To(Equal(item.exp), "Case: %+v", item)
+		} else {
+
+			It("should consume uniquely across all consumers within a group", func() {
+				errors := make(chan error, 100)
+				events := make(chan int64, 1e6)
+				go testFuzzing(errors, events, 120)
+				go testFuzzing(errors, events, 30)
+				Eventually(func() int { return len(events) }, "10s").Should(BeNumerically(">", 500))
+
+				go testFuzzing(errors, events, 300)
+				go testFuzzing(errors, events, 80)
+				go testFuzzing(errors, events, 220)
+				Eventually(func() int { return len(events) }, "20s").Should(BeNumerically(">", 4000))
+
+				go testFuzzing(errors, events, 160)
+				go testFuzzing(errors, events, 140)
+				Eventually(func() int { return len(events) }, "60s").Should(BeNumerically(">=", 10000))
+				Eventually(func() int { return len(errors) }, "10s").Should(Equal(7))
+
+				total := len(events)
+				slice := make([]int, 0, total)
+				for i := 0; i < total; i++ {
+					slice = append(slice, int(<-events))
+				}
+				sort.Ints(slice)
+				Expect(slice).To(HaveLen(10000))
+			})
+
 		}
-	})
 
+	})
 })
+
+/*******************************************************************
+ * TEST HELPERS
+ *******************************************************************/
+
+func testFuzzing(errors chan error, events chan int64, n int) {
+	group, err := NewConsumerGroup(testState.client, testState.zk, "sarama-cluster-fuzzing-test", t_TOPIC, nil, testConsumerConfig())
+	if err != nil {
+		errors <- err
+		return
+	}
+	defer group.Close()
+
+	for i := 0; i < n; i++ {
+		err := group.Process(func(b *EventBatch) error {
+			for _, e := range b.Events {
+				if e.Err != nil {
+					return e.Err
+				}
+				events <- int64(b.Partition)*1e6 + e.Offset
+			}
+			return nil
+		})
+		if err != nil {
+			errors <- err
+			return
+		}
+	}
+	errors <- nil
+}
