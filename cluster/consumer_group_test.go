@@ -226,12 +226,12 @@ var _ = Describe("ConsumerGroup", func() {
 				go testFuzzing(errors, events, 300)
 				go testFuzzing(errors, events, 80)
 				go testFuzzing(errors, events, 220)
-				Eventually(func() int { return len(events) }, "20s").Should(BeNumerically(">", 4000))
+				Eventually(func() int { return len(events) }, "40s").Should(BeNumerically(">", 4000))
 
 				go testFuzzing(errors, events, 160)
 				go testFuzzing(errors, events, 140)
-				Eventually(func() int { return len(events) }, "60s").Should(BeNumerically(">=", 10000))
-				Eventually(func() int { return len(errors) }, "10s").Should(Equal(7))
+				Eventually(func() int { return len(events) }, "120s").Should(BeNumerically(">=", 10000))
+				Eventually(func() int { return len(errors) }, "20s").Should(Equal(7))
 
 				total := len(events)
 				slice := make([]int, 0, total)
