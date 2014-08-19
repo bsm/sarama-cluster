@@ -60,10 +60,9 @@ var _ = Describe("ConsumerGroup", func() {
 
 	Describe("instances", func() {
 		var subject *ConsumerGroup
-		var zk *ZK
 
 		var newCG = func() (*ConsumerGroup, error) {
-			return NewConsumerGroup(testState.client, zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
+			return NewConsumerGroup(testState.client, testState.zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
 		}
 
 		var runConsumerCycle = func(errors chan error, events chan int64, n int) {
@@ -87,9 +86,6 @@ var _ = Describe("ConsumerGroup", func() {
 
 		BeforeEach(func() {
 			var err error
-			zk, err = NewZK([]string{"localhost:22181"}, 1e9)
-			Expect(err).NotTo(HaveOccurred())
-
 			subject, err = newCG()
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -99,13 +95,10 @@ var _ = Describe("ConsumerGroup", func() {
 				subject.Close()
 				subject = nil
 			}
-			if zk != nil {
-				zk.Close()
-			}
 		})
 
 		It("can be created & closed", func() {
-			lst, _, err := zk.Consumers(t_GROUP)
+			lst, _, err := testState.zk.Consumers(t_GROUP)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lst).To(HaveLen(1))
 			Expect(subject.Close()).NotTo(HaveOccurred())
@@ -160,17 +153,20 @@ var _ = Describe("ConsumerGroup", func() {
 
 		It("should checkout individual consumers", func() {
 			partition := int32(-1)
+			p0, _ := subject.Offset(0)
+			p1, _ := subject.Offset(1)
+
 			err := subject.Checkout(func(c *PartitionConsumer) error { partition = c.partition; return DiscardCommit })
 			Expect(err).NotTo(HaveOccurred())
 			Expect(partition).To(Equal(int32(0)))
 			num, _ := subject.Offset(0)
-			Expect(num).To(Equal(int64(0)))
+			Expect(num).To(Equal(p0))
 
 			err = subject.Checkout(func(c *PartitionConsumer) error { partition = c.partition; return DiscardCommit })
 			Expect(err).NotTo(HaveOccurred())
 			Expect(partition).To(Equal(int32(1)))
 			num, _ = subject.Offset(1)
-			Expect(num).To(Equal(int64(0)))
+			Expect(num).To(Equal(p1))
 		})
 
 		It("should process batches, and commit offsets", func() {
