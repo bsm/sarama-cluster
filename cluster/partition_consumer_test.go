@@ -12,7 +12,7 @@ var _ = Describe("PartitionConsumer", func() {
 
 	BeforeEach(func() {
 		stream = newMockStream()
-		subject = &PartitionConsumer{partition: 3, topic: tnT, stream: stream}
+		subject = &PartitionConsumer{partition: 3, topic: t_TOPIC, stream: stream}
 	})
 
 	It("should fetch batches of events (if available)", func() {
@@ -21,7 +21,7 @@ var _ = Describe("PartitionConsumer", func() {
 		stream.events <- &sarama.ConsumerEvent{}
 		batch := subject.Fetch()
 		Expect(batch).NotTo(BeNil())
-		Expect(batch.Topic).To(Equal(tnT))
+		Expect(batch.Topic).To(Equal(t_TOPIC))
 		Expect(batch.Partition).To(Equal(int32(3)))
 		Expect(batch.Events).To(HaveLen(2))
 		Expect(subject.Fetch()).To(BeNil())

@@ -1,34 +1,34 @@
 package cluster
 
-const (
-	REBALANCE_START uint8 = iota + 1
-	REBALANCE_OK
-	REBALANCE_ERROR
+import (
+	"io/ioutil"
+	"log"
 )
 
-// COMMON TYPES
+// Standard logger, set to ioutil.Discard by default
+var Logger = log.New(ioutil.Discard, "[sarama/cluster]", log.LstdFlags)
 
-// Partition information
-type Partition struct {
-	Id   int32
-	Addr string // Leader address
+// A notifier is an abstract event notification handler
+// By default, sarama/cluster uses the LogNotifier which logs events to standard logger
+type Notifier interface {
+	RebalanceStart(*ConsumerGroup)
+	RebalanceOK(*ConsumerGroup)
+	RebalanceError(*ConsumerGroup, error)
 }
 
-// A sortable slice of Partition structs
-type PartitionSlice []Partition
-
-func (s PartitionSlice) Len() int { return len(s) }
-func (s PartitionSlice) Less(i, j int) bool {
-	if s[i].Addr < s[j].Addr {
-		return true
-	}
-	return s[i].Id < s[j].Id
+// Standard log notifier, writes to Logger
+type LogNotifier struct {
+	*log.Logger
 }
-func (s PartitionSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
-// A subscribable notification
-type Notification struct {
-	Type uint8
-	Src  *ConsumerGroup
-	Err  error
+func (n *LogNotifier) RebalanceStart(cg *ConsumerGroup) {
+	n.Printf("rebalancing %s", cg.Name())
+}
+
+func (n *LogNotifier) RebalanceOK(cg *ConsumerGroup) {
+	n.Printf("rebalanced %s, claimed: %v", cg.Name(), cg.Claims())
+}
+
+func (n *LogNotifier) RebalanceError(cg *ConsumerGroup, err error) {
+	n.Printf("rebalancing %s failed: %s", cg.Name(), err.Error())
 }

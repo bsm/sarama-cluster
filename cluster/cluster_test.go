@@ -2,7 +2,10 @@ package cluster
 
 import (
 	"fmt"
-
+	"os"
+	"os/exec"
+	"path"
+	"runtime"
 	"sort"
 	"testing"
 	"time"
@@ -15,48 +18,104 @@ import (
 var _ = Describe("PartitionSlice", func() {
 
 	It("should sort correctly", func() {
-		p1 := Partition{Addr: "host1:9093", Id: 1}
-		p2 := Partition{Addr: "host1:9092", Id: 2}
-		p3 := Partition{Addr: "host2:9092", Id: 3}
-		p4 := Partition{Addr: "host2:9093", Id: 4}
-		p5 := Partition{Addr: "host1:9092", Id: 5}
+		p1 := Partition{Addr: "host1:9093", ID: 1}
+		p2 := Partition{Addr: "host1:9092", ID: 2}
+		p3 := Partition{Addr: "host2:9092", ID: 3}
+		p4 := Partition{Addr: "host3:9091", ID: 4}
+		p5 := Partition{Addr: "host2:9093", ID: 5}
+		p6 := Partition{Addr: "host1:9092", ID: 6}
 
-		slice := PartitionSlice{p1, p2, p3, p4, p5}
+		slice := PartitionSlice{p1, p2, p3, p4, p5, p6}
 		sort.Sort(slice)
-		Expect(slice).To(BeEquivalentTo(PartitionSlice{p2, p5, p1, p3, p4}))
+		Expect(slice).To(BeEquivalentTo(PartitionSlice{p2, p6, p1, p3, p5, p4}))
 	})
 
+})
+
+var _ = Describe("GUID", func() {
+
+	BeforeEach(func() {
+		cGUID.hostname = "testhost"
+		cGUID.pid = 20100
+	})
+
+	AfterEach(func() {
+		cGUID.inc = 0
+	})
+
+	It("should create GUIDs", func() {
+		cGUID.inc = 0xffffffff
+		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
+		Expect(NewGUIDAt("prefix", time.Unix(1414141414, 0))).To(Equal("prefix-testhost-20100-1414141414-1"))
+	})
+
+	It("should increment correctly", func() {
+		cGUID.inc = 0xffffffff - 1
+		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-4294967295"))
+		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
+	})
 })
 
 /*********************************************************************
  * TEST HOOK
  *********************************************************************/
 
+const (
+	t_KAFKA_VERSION = "kafka_2.10-0.8.1.1"
+	t_CLIENT        = "sarama-cluster-client"
+	t_TOPIC         = "sarama-cluster-topic"
+	t_GROUP         = "sarama-cluster-group"
+	t_DIR           = "/tmp/sarama-cluster-test"
+)
+
 var _ = BeforeSuite(func() {
-	clientConfig.WaitForElection = 2 * time.Second
-	consumerConfig.EventBufferSize = 10
+	var err error
 
-	client, err := sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, clientConfig)
+	runner := testDir(t_KAFKA_VERSION, "bin", "kafka-run-class.sh")
+	testState.zookeeper = exec.Command(runner, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
+	testState.kafka = exec.Command(runner, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
+	testState.kafka.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
+
+	// Create Dir
+	Expect(os.MkdirAll(t_DIR, 0775)).NotTo(HaveOccurred())
+
+	// Start ZK
+	Expect(testState.zookeeper.Start()).NotTo(HaveOccurred())
+	Eventually(func() *os.Process {
+		return testState.zookeeper.Process
+	}).ShouldNot(BeNil())
+
+	// Start Kafka
+	Expect(testState.kafka.Start()).NotTo(HaveOccurred())
+	Eventually(func() *os.Process {
+		return testState.kafka.Process
+	}).ShouldNot(BeNil())
+
+	// Connect client
+	testState.client, err = newClient()
 	Expect(err).NotTo(HaveOccurred())
-	defer client.Close()
 
-	pdsConfig := sarama.NewProducerConfig()
-	pdsConfig.Partitioner = sarama.NewHashPartitioner()
-	producer, err := sarama.NewProducer(client, pdsConfig)
-	Expect(err).NotTo(HaveOccurred())
-	defer producer.Close()
+	// Seed messages
+	Expect(seedMessages(10000)).NotTo(HaveOccurred())
+})
 
-	for i := 0; i < 1000; i++ {
-		Eventually(func() error {
-			return producer.SendMessage(tnT, nil, sarama.ByteEncoder([]byte("PLAINDATA")))
-		}).ShouldNot(HaveOccurred(), "50ms")
+var _ = AfterSuite(func() {
+	if testState.client != nil {
+		testState.client.Close()
 	}
+	if testState.kafka != nil {
+		testState.kafka.Process.Kill()
+	}
+	if testState.zookeeper != nil {
+		testState.zookeeper.Process.Kill()
+	}
+	Expect(os.RemoveAll(t_DIR)).NotTo(HaveOccurred())
 })
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeEach(func() {
-		tnN = &mockNotifier{msgs: make([]string, 0)}
+		testState.notifier = &mockNotifier{messages: make([]string, 0)}
 	})
 	RunSpecs(t, "sarama/cluster")
 }
@@ -65,20 +124,56 @@ func TestSuite(t *testing.T) {
  * TEST HELPERS
  *******************************************************************/
 
-var tnG = "sarama-cluster-group"
-var tnT = "sarama-cluster-topic"
-var tnN *mockNotifier
-var clientConfig = sarama.NewClientConfig()
-var consumerConfig = sarama.NewConsumerConfig()
+var testState struct {
+	kafka, zookeeper *exec.Cmd
+	client           *sarama.Client
+	notifier         *mockNotifier
+}
 
-type mockNotifier struct{ msgs []string }
+func newClient() (*sarama.Client, error) {
+	config := sarama.NewClientConfig()
+	config.WaitForElection = 6 * time.Second
+	config.MetadataRetries = 3
+	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, config)
+}
+
+func testDir(tokens ...string) string {
+	_, filename, _, _ := runtime.Caller(1)
+	tokens = append([]string{path.Dir(filename), "test"}, tokens...)
+	return path.Join(tokens...)
+}
+
+func testConsumerConfig() *sarama.ConsumerConfig {
+	return sarama.NewConsumerConfig()
+}
+
+func seedMessages(count int) error {
+	config := sarama.NewProducerConfig()
+	config.Partitioner = sarama.NewHashPartitioner()
+
+	producer, err := sarama.NewProducer(testState.client, config)
+	if err != nil {
+		return err
+	}
+	defer producer.Close()
+
+	for i := 0; i < count; i++ {
+		err := producer.SendMessage(t_TOPIC, nil, sarama.ByteEncoder([]byte(fmt.Sprintf("PLAINDATA-%08d", i))))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type mockNotifier struct{ messages []string }
 
 func (n *mockNotifier) RebalanceStart(cg *ConsumerGroup) {
-	n.msgs = append(n.msgs, fmt.Sprintf("rebalance start %s", cg.Name()))
+	n.messages = append(n.messages, fmt.Sprintf("rebalance start %s", cg.Name()))
 }
 func (n *mockNotifier) RebalanceOK(cg *ConsumerGroup) {
-	n.msgs = append(n.msgs, fmt.Sprintf("rebalance ok %s", cg.Name()))
+	n.messages = append(n.messages, fmt.Sprintf("rebalance ok %s", cg.Name()))
 }
 func (n *mockNotifier) RebalanceError(cg *ConsumerGroup, err error) {
-	n.msgs = append(n.msgs, fmt.Sprintf("rebalance error %s: %s", cg.Name(), err.Error()))
+	n.messages = append(n.messages, fmt.Sprintf("rebalance error %s: %s", cg.Name(), err.Error()))
 }

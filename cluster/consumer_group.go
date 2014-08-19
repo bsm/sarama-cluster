@@ -73,7 +73,7 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 
 	// Init struct
 	group = &ConsumerGroup{
-		id:    GUID.New(name),
+		id:    NewGUID(name),
 		name:  name,
 		topic: topic,
 
@@ -239,6 +239,7 @@ func (cg *ConsumerGroup) signalLoop() {
 // Stops the consumer group
 func (cg *ConsumerGroup) stop() {
 	cg.releaseClaims()
+	cg.zoo.DeleteConsumer(cg.name, cg.id)
 	close(cg.done)
 }
 
@@ -279,7 +280,7 @@ func (cg *ConsumerGroup) rebalance() (err error) {
 			cg.zkchange = nil
 			return
 		}
-		parts[i] = Partition{Id: pid, Addr: broker.Addr()}
+		parts[i] = Partition{ID: pid, Addr: broker.Addr()}
 	}
 
 	if err = cg.makeClaims(cids, parts); err != nil {
@@ -299,7 +300,7 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 	future := cg.claimRange(cids, parts)
 	unchanged := len(current) == len(future)
 	for _, pt := range future {
-		unchanged = unchanged && current[pt.Id]
+		unchanged = unchanged && current[pt.ID]
 	}
 	if unchanged {
 		return nil
@@ -308,7 +309,7 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 	cg.releaseClaims()
 	for _, part := range future {
 
-		pc, err := NewPartitionConsumer(cg, part.Id)
+		pc, err := NewPartitionConsumer(cg, part.ID)
 		if err != nil {
 			return err
 		}
@@ -330,25 +331,16 @@ func (cg *ConsumerGroup) claimRange(cids []string, parts PartitionSlice) Partiti
 	sort.Strings(cids)
 	sort.Sort(parts)
 
-	cpos := sort.SearchStrings(cids, cg.id)
-	clen := len(cids)
-	plen := len(parts)
-
-	step := int(math.Ceil(float64(plen) / float64(clen)))
-	if step < 1 {
-		step = 1
+	pos := sort.SearchStrings(cids, cg.id)
+	cln := len(cids)
+	if pos >= cln {
+		return parts[:0]
 	}
 
-	first := cpos * step
-	if cpos >= clen || first >= plen {
-		return make(PartitionSlice, 0)
-	}
-
-	last := (cpos + 1) * step
-	if last > plen {
-		last = plen
-	}
-	return parts[first:last]
+	n, i := float64(len(parts))/float64(cln), float64(pos)
+	min := int(math.Floor(i*n + 0.5))
+	max := int(math.Floor((i+1)*n + 0.5))
+	return parts[min:max]
 }
 
 // Releases all claims

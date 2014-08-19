@@ -4,7 +4,6 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -21,31 +20,54 @@ var _ = Describe("ConsumerGroup", func() {
 		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{0}},
 		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{1}},
 		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2}, []int32{2}},
+
 		{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{0, 3, 2, 1}, []int32{2}},
 		{"N3", []string{"N1", "N2", "N3", "N4"}, []int32{1, 3, 5, 7}, []int32{5}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{}},
+
+		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{0}},
+		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{}},
+		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1}, []int32{1}},
+
+		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{0}},
+		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{1, 2}},
+		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 1, 2, 3}, []int32{3}},
+
 		{"N1", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{0, 2}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{4, 6}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{8}},
-		{"N1", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{0, 1, 2}},
-		{"N9", []string{"N1", "N2"}, []int32{0, 1}, []int32{}},
-		{"N1", []string{"N1", "N2", "N3"}, []int32{0}, []int32{0}},
-		{"N2", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
-		{"N3", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
+		{"N2", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{4}},
+		{"N3", []string{"N1", "N2", "N3"}, []int32{0, 2, 4, 6, 8}, []int32{6, 8}},
+
 		{"N1", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{0, 1, 2}},
 		{"N2", []string{"N1", "N2"}, []int32{0, 1, 2, 3, 4}, []int32{3, 4}},
-		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{3}},
-		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{}},
+
+		{"N1", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
+		{"N2", []string{"N1", "N2", "N3"}, []int32{0}, []int32{0}},
+		{"N3", []string{"N1", "N2", "N3"}, []int32{0}, []int32{}},
+
+		{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{0}},
+		{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{1}},
+		{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{}},
+		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{2}},
+		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3}, []int32{3}},
+
+		{"N1", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{0, 1}},
+		{"N2", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{2, 3, 4}},
+		{"N3", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{5, 6}},
+		{"N4", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{7, 8, 9}},
+		{"N5", []string{"N1", "N2", "N3", "N4", "N5"}, []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, []int32{10, 11}},
+
+		{"N9", []string{"N1", "N2"}, []int32{0, 1}, []int32{}},
 	}
 
 	Describe("instances", func() {
-		var zk *ZK
 		var subject *ConsumerGroup
-		var client *sarama.Client
-		var err error
+		var zk *ZK
+
+		var newCG = func() (*ConsumerGroup, error) {
+			return NewConsumerGroup(testState.client, zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
+		}
 
 		var runConsumerCycle = func(errors chan error, events chan int64, n int) {
-			group, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			group, err := newCG()
 			if err != nil {
 				errors <- err
 				return
@@ -64,13 +86,11 @@ var _ = Describe("ConsumerGroup", func() {
 		}
 
 		BeforeEach(func() {
+			var err error
 			zk, err = NewZK([]string{"localhost:22181"}, 1e9)
 			Expect(err).NotTo(HaveOccurred())
 
-			client, err = sarama.NewClient("sarama-cluster-client", []string{"127.0.0.1:29092"}, clientConfig)
-			Expect(err).NotTo(HaveOccurred())
-
-			subject, err = NewConsumerGroup(client, zk, tnG, tnT, tnN, consumerConfig)
+			subject, err = newCG()
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -79,34 +99,29 @@ var _ = Describe("ConsumerGroup", func() {
 				subject.Close()
 				subject = nil
 			}
-			if client != nil {
-				client.Close()
-				client = nil
-			}
 			if zk != nil {
 				zk.Close()
-				zk = nil
 			}
 		})
 
 		It("can be created & closed", func() {
-			lst, _, err := zk.Consumers(tnG)
+			lst, _, err := zk.Consumers(t_GROUP)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lst).To(HaveLen(1))
-			Expect(subject.Close()).To(BeNil())
+			Expect(subject.Close()).NotTo(HaveOccurred())
 			subject = nil
 		})
 
 		It("should claim partitions", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "2s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 		})
 
 		It("should notify subscribed listener", func() {
 			Eventually(func() []string {
-				return tnN.msgs
-			}, "2s").Should(HaveLen(2))
+				return testState.notifier.messages
+			}, "5s").Should(HaveLen(2))
 		})
 
 		It("should release partitions & rebalance when new consumers join", func() {
@@ -114,7 +129,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return subject.Claims()
 			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
-			other, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			other, err := newCG()
 			Expect(err).NotTo(HaveOccurred())
 			defer other.Close()
 
@@ -126,7 +141,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return other.Claims()
 			}, "5s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
-			third, err := NewConsumerGroup(client, zk, tnG, tnT, nil, consumerConfig)
+			third, err := newCG()
 			Expect(err).NotTo(HaveOccurred())
 			defer third.Close()
 
@@ -166,10 +181,10 @@ var _ = Describe("ConsumerGroup", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(batch).NotTo(BeNil())
-			Expect(batch.Events).To(HaveLen(10))
+			Expect(batch.Events).To(HaveLen(16))
 
 			now, _ := subject.Offset(0)
-			Expect(now).To(Equal(was + 10))
+			Expect(now).To(Equal(was + 16))
 		})
 
 		It("should skip commits if requested", func() {
@@ -192,14 +207,14 @@ var _ = Describe("ConsumerGroup", func() {
 		It("should consume uniquely across all consumers within a group", func() {
 			errors := make(chan error, 5)
 			events := make(chan int64, 1e5)
-			runConsumerCycle(errors, events, 24)
-			runConsumerCycle(errors, events, 96)
-			runConsumerCycle(errors, events, 2)
-			runConsumerCycle(errors, events, 48)
-			runConsumerCycle(errors, events, 24)
+			go runConsumerCycle(errors, events, 24)
+			go runConsumerCycle(errors, events, 96)
+			go runConsumerCycle(errors, events, 2)
+			go runConsumerCycle(errors, events, 48)
+			go runConsumerCycle(errors, events, 24)
 
 			for i := 0; i < 5; i++ {
-				Expect(<-errors).To(BeNil())
+				Expect(<-errors).NotTo(HaveOccurred())
 			}
 			consumed := make(map[int64]bool)
 			for i := 0; i < len(events); i++ {
@@ -216,7 +231,7 @@ var _ = Describe("ConsumerGroup", func() {
 			group := &ConsumerGroup{id: item.id}
 			parts := make(PartitionSlice, len(item.pids))
 			for i, pid := range item.pids {
-				parts[i] = Partition{Id: pid, Addr: "locahost:9092"}
+				parts[i] = Partition{ID: pid, Addr: "locahost:9092"}
 			}
 			sort.StringSlice(item.cids).Swap(0, len(item.cids)-1)
 			parts.Swap(0, len(parts)-1)
@@ -224,7 +239,7 @@ var _ = Describe("ConsumerGroup", func() {
 			parts = group.claimRange(item.cids, parts)
 			actual := make([]int32, len(parts))
 			for i, part := range parts {
-				actual[i] = part.Id
+				actual[i] = part.ID
 			}
 
 			Expect(actual).To(Equal(item.exp), "Case: %+v", item)
