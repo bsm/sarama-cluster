@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -13,12 +14,11 @@ var mockError = errors.New("mock: error")
 
 var _ = Describe("ConsumerGroup", func() {
 
-	var newCG = func() (*ConsumerGroup, error) {
-		return NewConsumerGroup(testState.client, testState.zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
+	var newCG = func(client *sarama.Client, zk *ZK) (*ConsumerGroup, error) {
+		return NewConsumerGroup(client, zk, t_GROUP, t_TOPIC, testState.notifier, testConsumerConfig())
 	}
 
 	It("should determine which partitions to claim", func() {
-
 		testCases := []struct {
 			id   string
 			cids []string
@@ -90,10 +90,17 @@ var _ = Describe("ConsumerGroup", func() {
 
 	Describe("instances", func() {
 		var subject *ConsumerGroup
+		var client *sarama.Client
+		var zk *ZK
 
 		BeforeEach(func() {
 			var err error
-			subject, err = newCG()
+
+			client, err = newClient()
+			Expect(err).NotTo(HaveOccurred())
+			zk, err = NewZK([]string{"localhost:22181"}, 1e9)
+			Expect(err).NotTo(HaveOccurred())
+			subject, err = newCG(client, zk)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -105,7 +112,7 @@ var _ = Describe("ConsumerGroup", func() {
 		})
 
 		It("can be created & closed", func() {
-			lst, _, err := testState.zk.Consumers(t_GROUP)
+			lst, _, err := zk.Consumers(t_GROUP)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lst).To(HaveLen(1))
 			Expect(subject.Close()).NotTo(HaveOccurred())
@@ -129,7 +136,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return subject.Claims()
 			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
-			other, err := newCG()
+			other, err := newCG(client, zk)
 			Expect(err).NotTo(HaveOccurred())
 			defer other.Close()
 
@@ -141,7 +148,7 @@ var _ = Describe("ConsumerGroup", func() {
 				return other.Claims()
 			}, "5s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
-			third, err := newCG()
+			third, err := newCG(client, zk)
 			Expect(err).NotTo(HaveOccurred())
 			defer third.Close()
 
@@ -210,9 +217,9 @@ var _ = Describe("ConsumerGroup", func() {
 	})
 
 	Describe("fuzzing", func() {
-		if os.Getenv("SLOW") == "" {
+		if os.Getenv("FUZZ") == "" {
 
-			PIt("tests are disabled, please run with SLOW=1")
+			PIt("tests are disabled, please run with FUZZ=1")
 
 		} else {
 
@@ -274,16 +281,30 @@ func (e *fuzzingEvent) ID() int {
 }
 
 func fuzzingTest(origin string, n int, errors chan error, events chan *fuzzingEvent) {
-	// notifier := LogNotifier{log.New(os.Stdout, "["+origin+"] ", 0)}
-	cg, err := NewConsumerGroup(testState.client, testState.zk, "sarama-cluster-fuzzing-test", t_TOPIC, nil, testConsumerConfig())
+	client, err := newClient()
 	if err != nil {
 		errors <- err
 		return
 	}
-	defer cg.Close()
+	defer client.Close()
+
+	zk, err := NewZK([]string{"localhost:22181"}, 1e9)
+	if err != nil {
+		errors <- err
+		return
+	}
+	defer zk.Close()
+
+	// notifier := LogNotifier{log.New(os.Stdout, "["+origin+"] ", 0)}
+	group, err := NewConsumerGroup(client, zk, "sarama-cluster-fuzzing-test", t_TOPIC, nil, testConsumerConfig())
+	if err != nil {
+		errors <- err
+		return
+	}
+	defer group.Close()
 
 	for len(events) < n {
-		err := cg.Process(func(b *EventBatch) error {
+		err := group.Process(func(b *EventBatch) error {
 			for _, evt := range b.Events {
 				if evt.Err != nil {
 					return evt.Err

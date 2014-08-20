@@ -9,8 +9,8 @@ default: test
 test: deps
 	go test
 
-slowtest: deps
-	SLOW=1 go test
+fuzztest: deps
+	FUZZ=1 go test
 
 .PHONY: test
 

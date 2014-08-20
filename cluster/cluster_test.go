@@ -69,8 +69,6 @@ const (
 )
 
 var _ = BeforeSuite(func() {
-	var err error
-
 	runner := testDir(t_KAFKA_VERSION, "bin", "kafka-run-class.sh")
 	testState.zookeeper = exec.Command(runner, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
 	testState.kafka = exec.Command(runner, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
@@ -91,23 +89,11 @@ var _ = BeforeSuite(func() {
 		return testState.kafka.Process
 	}).ShouldNot(BeNil())
 
-	// Connect client & zk
-	testState.client, err = newClient()
-	Expect(err).NotTo(HaveOccurred())
-	testState.zk, err = NewZK([]string{"localhost:22181"}, 1e9)
-	Expect(err).NotTo(HaveOccurred())
-
 	// Seed messages
 	Expect(seedMessages(10000)).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
-	if testState.client != nil {
-		testState.client.Close()
-	}
-	if testState.zk != nil {
-		testState.zk.Close()
-	}
 	if testState.kafka != nil {
 		testState.kafka.Process.Kill()
 	}
@@ -131,8 +117,6 @@ func TestSuite(t *testing.T) {
 
 var testState struct {
 	kafka, zookeeper *exec.Cmd
-	client           *sarama.Client
-	zk               *ZK
 	notifier         *mockNotifier
 }
 
@@ -154,10 +138,15 @@ func testConsumerConfig() *sarama.ConsumerConfig {
 }
 
 func seedMessages(count int) error {
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
 	config := sarama.NewProducerConfig()
 	config.Partitioner = sarama.NewHashPartitioner()
-
-	producer, err := sarama.NewProducer(testState.client, config)
+	producer, err := sarama.NewProducer(client, config)
 	if err != nil {
 		return err
 	}
