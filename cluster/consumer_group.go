@@ -165,7 +165,7 @@ func (cg *ConsumerGroup) Process(callback func(*EventBatch) error) error {
 
 			return callback(batch)
 		}
-		return nil
+		return NoCheckout
 	})
 }
 

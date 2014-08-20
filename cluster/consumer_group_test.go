@@ -218,30 +218,43 @@ var _ = Describe("ConsumerGroup", func() {
 
 			It("should consume uniquely across all consumers within a group", func() {
 				errors := make(chan error, 100)
-				events := make(chan int64, 1e6)
-				go testFuzzing(errors, events, 120)
-				go testFuzzing(errors, events, 30)
-				Eventually(func() int { return len(events) }, "10s").Should(BeNumerically(">", 500))
+				events := make(chan *fuzzingEvent, 1e6)
 
-				go testFuzzing(errors, events, 300)
-				go testFuzzing(errors, events, 80)
-				go testFuzzing(errors, events, 220)
+				go fuzzingTest("A", 3000, errors, events)
+				go fuzzingTest("B", 100, errors, events)
+				Eventually(func() int { return len(events) }, "20s").Should(BeNumerically(">", 500))
+
+				go fuzzingTest("C", 9000, errors, events)
+				go fuzzingTest("D", 1000, errors, events)
+				go fuzzingTest("E", 6000, errors, events)
+				go fuzzingTest("F", 2000, errors, events)
+				go fuzzingTest("G", 4000, errors, events)
 				Eventually(func() int { return len(events) }, "40s").Should(BeNumerically(">", 4000))
 
-				go testFuzzing(errors, events, 160)
-				go testFuzzing(errors, events, 140)
+				go fuzzingTest("H", 10000, errors, events)
+				go fuzzingTest("I", 10000, errors, events)
 				Eventually(func() int { return len(events) }, "120s").Should(BeNumerically(">=", 10000))
-				Eventually(func() int { return len(errors) }, "20s").Should(Equal(7))
+				Eventually(func() int { return len(errors) }, "10s").Should(Equal(9))
 
-				total := len(events)
-				slice := make([]int, 0, total)
-				for i := 0; i < total; i++ {
-					slice = append(slice, int(<-events))
+				for len(errors) > 0 {
+					Expect(<-errors).NotTo(HaveOccurred())
 				}
-				sort.Ints(slice)
-				Expect(slice).To(HaveLen(10000))
-			})
 
+				byID := make(map[int][]fuzzingEvent, len(events))
+				for len(events) > 0 {
+					evt := <-events
+					eid := evt.ID()
+					byID[eid] = append(byID[eid], *evt)
+				}
+
+				// Ensure each event was consumed only once
+				for _, evts := range byID {
+					Expect(evts).To(HaveLen(1))
+				}
+
+				// Ensure we have consumed 10k events
+				Expect(len(byID)).To(Equal(10000))
+			})
 		}
 
 	})
@@ -251,25 +264,35 @@ var _ = Describe("ConsumerGroup", func() {
  * TEST HELPERS
  *******************************************************************/
 
-func testFuzzing(errors chan error, events chan int64, n int) {
-	group, err := NewConsumerGroup(testState.client, testState.zk, "sarama-cluster-fuzzing-test", t_TOPIC, nil, testConsumerConfig())
+type fuzzingEvent struct {
+	Origin            string
+	Partition, Offset int
+}
+
+func (e *fuzzingEvent) ID() int {
+	return e.Partition*1e6 + e.Offset
+}
+
+func fuzzingTest(origin string, n int, errors chan error, events chan *fuzzingEvent) {
+	// notifier := LogNotifier{log.New(os.Stdout, "["+origin+"] ", 0)}
+	cg, err := NewConsumerGroup(testState.client, testState.zk, "sarama-cluster-fuzzing-test", t_TOPIC, nil, testConsumerConfig())
 	if err != nil {
 		errors <- err
 		return
 	}
-	defer group.Close()
+	defer cg.Close()
 
-	for i := 0; i < n; i++ {
-		err := group.Process(func(b *EventBatch) error {
-			for _, e := range b.Events {
-				if e.Err != nil {
-					return e.Err
+	for len(events) < n {
+		err := cg.Process(func(b *EventBatch) error {
+			for _, evt := range b.Events {
+				if evt.Err != nil {
+					return evt.Err
 				}
-				events <- int64(b.Partition)*1e6 + e.Offset
+				events <- &fuzzingEvent{origin, int(b.Partition), int(evt.Offset)}
 			}
 			return nil
 		})
-		if err != nil {
+		if err != nil && err != NoCheckout {
 			errors <- err
 			return
 		}

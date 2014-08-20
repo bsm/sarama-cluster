@@ -40,7 +40,7 @@ type PartitionConsumer struct {
 
 // NewPartitionConsumer creates a new partition consumer instance
 func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionConsumer, error) {
-	config := sarama.ConsumerConfig{
+	config := &sarama.ConsumerConfig{
 		DefaultFetchSize: group.config.DefaultFetchSize,
 		MinFetchSize:     group.config.MinFetchSize,
 		MaxMessageSize:   group.config.MaxMessageSize,
@@ -57,7 +57,7 @@ func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionCons
 		config.OffsetValue = offset
 	}
 
-	stream, err := sarama.NewConsumer(group.client, group.topic, partition, group.name, &config)
+	stream, err := sarama.NewConsumer(group.client, group.topic, partition, group.name, config)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +66,7 @@ func NewPartitionConsumer(group *ConsumerGroup, partition int32) (*PartitionCons
 		stream:    stream,
 		topic:     group.topic,
 		partition: partition,
+		offset:    config.OffsetValue,
 	}, nil
 }
 
