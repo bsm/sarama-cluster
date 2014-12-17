@@ -90,7 +90,7 @@ var _ = BeforeSuite(func() {
 	}).ShouldNot(BeNil())
 
 	// Create partition
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 	err := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
 		"--create",
 		"--topic", t_TOPIC,
@@ -99,10 +99,19 @@ var _ = BeforeSuite(func() {
 		"--replication-factor", "1",
 	).Run()
 	Expect(err).NotTo(HaveOccurred())
-	time.Sleep(3 * time.Second)
+
+	// Create and wait for client
+	client, err := newClient()
+	Expect(err).NotTo(HaveOccurred())
+	defer client.Close()
+
+	Eventually(func() error {
+		_, err := client.Partitions(t_TOPIC)
+		return err
+	}).ShouldNot(HaveOccurred(), "10s")
 
 	// Seed messages
-	Expect(seedMessages(10000)).NotTo(HaveOccurred())
+	Expect(seedMessages(client, 10000)).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
@@ -146,13 +155,7 @@ func testConsumerConfig() *sarama.ConsumerConfig {
 	return sarama.NewConsumerConfig()
 }
 
-func seedMessages(count int) error {
-	client, err := newClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
+func seedMessages(client *sarama.Client, count int) error {
 	producer, err := sarama.NewSimpleProducer(client, t_TOPIC, nil)
 	if err != nil {
 		return err
