@@ -127,19 +127,19 @@ var _ = Describe("ConsumerGroup", func() {
 		It("should claim partitions", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "10s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 		})
 
 		It("should notify subscribed listener", func() {
 			Eventually(func() []string {
 				return testState.notifier.messages
-			}, "5s").Should(HaveLen(2))
+			}, "10s").Should(HaveLen(2))
 		})
 
 		It("should release partitions & rebalance when new consumers join", func() {
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
+			}, "10s").Should(Equal([]int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}))
 
 			other, err := newCG(client, zk)
 			Expect(err).NotTo(HaveOccurred())
@@ -147,11 +147,11 @@ var _ = Describe("ConsumerGroup", func() {
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "5s").Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
+			}, "10s").Should(Equal([]int32{0, 1, 2, 3, 4, 5}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}, "5s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
+			}, "10s").Should(Equal([]int32{6, 7, 8, 9, 10, 11}))
 
 			third, err := newCG(client, zk)
 			Expect(err).NotTo(HaveOccurred())
@@ -159,15 +159,15 @@ var _ = Describe("ConsumerGroup", func() {
 
 			Eventually(func() []int32 {
 				return subject.Claims()
-			}, "5s").Should(Equal([]int32{0, 1, 2, 3}))
+			}, "10s").Should(Equal([]int32{0, 1, 2, 3}))
 
 			Eventually(func() []int32 {
 				return other.Claims()
-			}, "5s").Should(Equal([]int32{4, 5, 6, 7}))
+			}, "10s").Should(Equal([]int32{4, 5, 6, 7}))
 
 			Eventually(func() []int32 {
 				return third.Claims()
-			}, "5s").Should(Equal([]int32{8, 9, 10, 11}))
+			}, "10s").Should(Equal([]int32{8, 9, 10, 11}))
 		})
 
 		It("should checkout individual consumers", func() {
