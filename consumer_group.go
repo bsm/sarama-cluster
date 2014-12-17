@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	DiscardCommit = errors.New("sarama: commit discarded")
-	NoCheckout    = errors.New("sarama: not checkout")
+	DiscardCommit    = errors.New("sarama: commit discarded")
+	NoCheckout       = errors.New("sarama: not checkout")
+	RollbackCheckout = errors.New("sarama: rollback checkout")
 )
 
 // A ConsumerGroup operates on all partitions of a single topic. The goal is to ensure
@@ -41,7 +42,7 @@ type ConsumerGroup struct {
 	claimed  chan *PartitionConsumer
 	notify   Notifier
 
-	checkout, force, stopper, done chan bool
+	checkout, checkin, force, stopper, done chan bool
 }
 
 // NewConsumerGroup creates a new consumer group for a given topic.
@@ -86,6 +87,7 @@ func NewConsumerGroup(client *sarama.Client, zoo *ZK, name string, topic string,
 		stopper:  make(chan bool),
 		done:     make(chan bool),
 		checkout: make(chan bool),
+		checkin:  make(chan bool),
 		force:    make(chan bool),
 		claimed:  make(chan *PartitionConsumer),
 	}
@@ -117,14 +119,18 @@ func (cg *ConsumerGroup) Topic() string {
 func (cg *ConsumerGroup) Checkout(callback func(*PartitionConsumer) error) error {
 	cg.checkout <- true
 	claimed := <-cg.claimed
+	defer func() { cg.checkin <- true }()
 
 	if claimed == nil {
 		return NoCheckout
 	}
 
+	original := claimed.Offset()
 	err := callback(claimed)
 	if err == DiscardCommit {
 		err = nil
+	} else if err == RollbackCheckout {
+		err = claimed.Rollback(original)
 	} else if err == nil && claimed.offset > 0 {
 		err = cg.Commit(claimed.partition, claimed.offset+1)
 	}
@@ -228,6 +234,7 @@ func (cg *ConsumerGroup) signalLoop() {
 			cg.zkchange = nil
 		case <-cg.checkout:
 			cg.claimed <- cg.nextConsumer()
+			<-cg.checkin
 		}
 	}
 }
@@ -308,13 +315,17 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 
 	cg.releaseClaims()
 	for _, part := range future {
-
-		pc, err := NewPartitionConsumer(cg, part.ID)
+		err := cg.zoo.Claim(cg.name, cg.topic, part.ID, cg.id)
 		if err != nil {
 			return err
 		}
 
-		err = cg.zoo.Claim(cg.name, cg.topic, pc.partition, cg.id)
+		offset, err := cg.Offset(part.ID)
+		if err != nil {
+			return err
+		}
+
+		pc, err := NewPartitionConsumer(cg.client, cg.config, cg.topic, cg.name, part.ID, offset)
 		if err != nil {
 			return err
 		}
@@ -326,7 +337,7 @@ func (cg *ConsumerGroup) makeClaims(cids []string, parts PartitionSlice) error {
 	return nil
 }
 
-// Determine the partititons dumber to claim
+// Determine the partititons number to claim
 func (cg *ConsumerGroup) claimRange(cids []string, parts PartitionSlice) PartitionSlice {
 	sort.Strings(cids)
 	sort.Sort(parts)

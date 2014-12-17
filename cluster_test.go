@@ -89,6 +89,18 @@ var _ = BeforeSuite(func() {
 		return testState.kafka.Process
 	}).ShouldNot(BeNil())
 
+	// Create partition
+	time.Sleep(2 * time.Second)
+	err := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
+		"--create",
+		"--topic", t_TOPIC,
+		"--zookeeper", "127.0.0.1:22181",
+		"--partitions", "12",
+		"--replication-factor", "1",
+	).Run()
+	Expect(err).NotTo(HaveOccurred())
+	time.Sleep(2 * time.Second)
+
 	// Seed messages
 	Expect(seedMessages(10000)).NotTo(HaveOccurred())
 })
@@ -121,10 +133,7 @@ var testState struct {
 }
 
 func newClient() (*sarama.Client, error) {
-	config := sarama.NewClientConfig()
-	config.WaitForElection = 6 * time.Second
-	config.MetadataRetries = 3
-	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, config)
+	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, sarama.NewClientConfig())
 }
 
 func testDir(tokens ...string) string {
@@ -144,16 +153,14 @@ func seedMessages(count int) error {
 	}
 	defer client.Close()
 
-	config := sarama.NewProducerConfig()
-	config.Partitioner = sarama.NewHashPartitioner()
-	producer, err := sarama.NewProducer(client, config)
+	producer, err := sarama.NewSimpleProducer(client, t_TOPIC, nil)
 	if err != nil {
 		return err
 	}
 	defer producer.Close()
 
 	for i := 0; i < count; i++ {
-		err := producer.SendMessage(t_TOPIC, nil, sarama.ByteEncoder([]byte(fmt.Sprintf("PLAINDATA-%08d", i))))
+		err := producer.SendMessage(nil, sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i)))
 		if err != nil {
 			return err
 		}
