@@ -108,7 +108,7 @@ var _ = BeforeSuite(func() {
 	Eventually(func() error {
 		_, err := client.Partitions(t_TOPIC)
 		return err
-	}).ShouldNot(HaveOccurred(), "10s")
+	}).ShouldNot(HaveOccurred(), "30s")
 
 	// Seed messages
 	Expect(seedMessages(client, 10000)).NotTo(HaveOccurred())
