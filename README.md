@@ -1,12 +1,12 @@
 # Sarama Cluster
 
-[![Build Status](https://travis-ci.org/bsm/sarama.png)](https://travis-ci.org/bsm/sarama)
+[![Build Status](https://travis-ci.org/bsm/sarama-cluster.png)](https://travis-ci.org/bsm/sarama-cluster)
 
 Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go client library for Apache Kafka 0.8 (and later).
 
 ## Documentation
 
-Documentation is available via godoc at http://godoc.org/github.com/bsm/sarama/cluster
+Documentation is available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
 
 ## Running tests
 
@@ -41,4 +41,3 @@ To run tests, call:
     CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
     TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
     SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
