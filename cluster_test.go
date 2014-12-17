@@ -90,15 +90,15 @@ var _ = BeforeSuite(func() {
 	}).ShouldNot(BeNil())
 
 	// Create partition
-	time.Sleep(1 * time.Second)
-	err := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
+	time.Sleep(2 * time.Second)
+	out, _ := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
 		"--create",
 		"--topic", t_TOPIC,
 		"--zookeeper", "127.0.0.1:22181",
 		"--partitions", "12",
 		"--replication-factor", "1",
-	).Run()
-	Expect(err).NotTo(HaveOccurred())
+	).Output()
+	Expect(string(out)).To(ContainSubstring("Created topic"))
 
 	// Create and wait for client
 	client, err := newClient()
@@ -108,7 +108,7 @@ var _ = BeforeSuite(func() {
 	Eventually(func() error {
 		_, err := client.Partitions(t_TOPIC)
 		return err
-	}).ShouldNot(HaveOccurred(), "120s")
+	}).ShouldNot(HaveOccurred(), "10s")
 
 	// Seed messages
 	Expect(seedMessages(client, 10000)).NotTo(HaveOccurred())
