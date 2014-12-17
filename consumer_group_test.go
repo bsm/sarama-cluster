@@ -266,7 +266,7 @@ var _ = Describe("ConsumerGroup", func() {
 
 				go fuzzingTest("P", 10000, errors, events)
 				Eventually(func() int { return len(events) }, "60s").Should(BeNumerically(">=", 10000))
-				Eventually(func() int { return len(errors) }, "10s").Should(Equal(16))
+				Eventually(func() int { return len(errors) }, "20s").Should(Equal(16))
 
 				for len(errors) > 0 {
 					Expect(<-errors).NotTo(HaveOccurred())

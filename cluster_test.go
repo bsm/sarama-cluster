@@ -90,7 +90,7 @@ var _ = BeforeSuite(func() {
 	}).ShouldNot(BeNil())
 
 	// Create partition
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 	err := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
 		"--create",
 		"--topic", t_TOPIC,
@@ -99,7 +99,7 @@ var _ = BeforeSuite(func() {
 		"--replication-factor", "1",
 	).Run()
 	Expect(err).NotTo(HaveOccurred())
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Seed messages
 	Expect(seedMessages(10000)).NotTo(HaveOccurred())
