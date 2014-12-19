@@ -6,12 +6,12 @@ Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go clien
 
 ## Documentation
 
-Documentation is available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
+Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
 
 ## Running tests
 
 You need to install Ginkgo & Gomega to run tests. Please see
-http://onsi.github.io/ginkgo/ for more details.
+http://onsi.github.io/ginkgo for more details.
 
 To run tests, call:
 
