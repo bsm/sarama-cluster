@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -53,28 +52,23 @@ var _ = BeforeSuite(func() {
 	// Create Dir
 	Expect(os.MkdirAll(t_DIR, 0775)).NotTo(HaveOccurred())
 
-	// Start ZK
+	// Start ZK & Kafka
 	Expect(testState.zookeeper.Start()).NotTo(HaveOccurred())
-	Eventually(func() *os.Process {
-		return testState.zookeeper.Process
-	}).ShouldNot(BeNil())
-
-	// Start Kafka
 	Expect(testState.kafka.Start()).NotTo(HaveOccurred())
-	Eventually(func() *os.Process {
-		return testState.kafka.Process
-	}).ShouldNot(BeNil())
-	time.Sleep(3 * time.Second)
 
-	// Create and wait for client
-	client, err := newClient()
-	Expect(err).NotTo(HaveOccurred())
+	// Wait for client
+	var client *sarama.Client
+	Eventually(func() error {
+		var err error
+		client, err = newClient()
+		return err
+	}, "10s", "1s").ShouldNot(HaveOccurred())
 	defer client.Close()
 
 	Eventually(func() error {
 		_, err := client.Partitions(t_TOPIC)
 		return err
-	}).ShouldNot(HaveOccurred(), "10s")
+	}, "10s", "1s").ShouldNot(HaveOccurred())
 
 	// Seed messages
 	Expect(seedMessages(client, 10000)).NotTo(HaveOccurred())
@@ -102,7 +96,7 @@ func TestSuite(t *testing.T) {
 var testState struct{ kafka, zookeeper *exec.Cmd }
 
 func newClient() (*sarama.Client, error) {
-	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, sarama.NewClientConfig())
+	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, nil)
 }
 
 func testDir(tokens ...string) string {
