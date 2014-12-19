@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -10,7 +12,7 @@ var _ = Describe("Consumer", func() {
 	var subject *Consumer
 	var client *sarama.Client
 	var newConsumer = func() (*Consumer, error) {
-		return NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, testState.notifier, nil)
+		return NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, nil)
 	}
 
 	BeforeEach(func() {
@@ -50,8 +52,15 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should notify subscribed listener", func() {
+		notifier := &mockNotifier{messages: make([]string, 0)}
+		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+			Notifier: notifier,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		defer consumer.Close()
+
 		Eventually(func() []string {
-			return testState.notifier.messages
+			return notifier.messages
 		}, "5s").Should(HaveLen(2))
 	})
 
@@ -99,14 +108,42 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should auto-ack if requested", func() {
-		subject.AutoAck = true
+		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+			AutoAck: true,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		defer consumer.Close()
+
 		cnt := 0
-		for _ = range subject.Events() {
+		for _ = range consumer.Events() {
 			if cnt++; cnt > 10 {
 				break
 			}
 		}
-		Expect(subject.acked).NotTo(BeEmpty())
+		Expect(consumer.acked).NotTo(BeEmpty())
+	})
+
+	It("should auto-commit if requested", func() {
+		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+			AutoAck:     true,
+			CommitEvery: 10 * time.Millisecond,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		defer consumer.Close()
+
+		cnt := 0
+		for _ = range consumer.Events() {
+			if cnt++; cnt > 99 {
+				break
+			}
+		}
+		Eventually(func() int64 {
+			n1, _ := consumer.Offset(0)
+			n2, _ := consumer.Offset(1)
+			n3, _ := consumer.Offset(2)
+			n4, _ := consumer.Offset(3)
+			return n1 + n2 + n3 + n4
+		}).Should(Equal(int64(100)))
 	})
 
 	It("should ack processed events", func() {

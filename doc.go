@@ -13,29 +13,20 @@ Usage example:
   }
   defer client.Close()
 
-  consumer, err := cluster.NewConsumer(client, []string{"localhost:22181"}, "my-group", "my-topic", nil, nil)
+  consumer, err := cluster.NewConsumer(client, []string{"localhost:22181"}, "my-group", "my-topic", &cluster.ConsumerConfig{
+    CommitEvery: time.Second, // Enable periodic auto-commits
+  })
   if err != nil {
     log.Fatal(err)
   }
-  defer consumer.Close()
 
-  // Auto-commit offset every second
-  stopper := make(chan struct{})
-  go func() {
-    for {
-      select {
-      case <-stopper:
-        return
-      case <-time.After(time.Second):
-      }
-      consumer.Commit()
-    }
-  }()
+  // Don't forget to close the consumer.
+  // This will also trigger a commit.
+  defer consumer.Close()
 
   for event := range consumer.Events() {
     fmt.Println(string(event.Value))  // Print to STDOUT
     consumer.Ack(event)               // Mark event as processed
   }
-  close(stopper)
 */
-package http
+package cluster

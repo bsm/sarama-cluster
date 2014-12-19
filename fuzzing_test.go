@@ -9,9 +9,10 @@ import (
 var _ = Describe("fuzzing", func() {
 
 	var fuzz = func(client *sarama.Client, id string, n int, errors chan error, events chan *sarama.ConsumerEvent) {
-		consumer, err := NewConsumerWithID(client, []string{"localhost:22181"},
-			"sarama-cluster-fuzzing-test", t_TOPIC, id, nil,
-			sarama.NewConsumerConfig(),
+		consumer, err := NewConsumer(client,
+			[]string{"localhost:22181"},
+			"sarama-cluster-fuzzing-test", t_TOPIC,
+			&ConsumerConfig{customID: id},
 		)
 		if err != nil {
 			errors <- err

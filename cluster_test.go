@@ -92,9 +92,6 @@ var _ = AfterSuite(func() {
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	BeforeEach(func() {
-		testState.notifier = &mockNotifier{messages: make([]string, 0)}
-	})
 	RunSpecs(t, "sarama/cluster")
 }
 
@@ -102,10 +99,7 @@ func TestSuite(t *testing.T) {
  * TEST HELPERS
  *******************************************************************/
 
-var testState struct {
-	kafka, zookeeper *exec.Cmd
-	notifier         *mockNotifier
-}
+var testState struct{ kafka, zookeeper *exec.Cmd }
 
 func newClient() (*sarama.Client, error) {
 	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, sarama.NewClientConfig())
@@ -137,11 +131,14 @@ func seedMessages(client *sarama.Client, count int) error {
 type mockNotifier struct{ messages []string }
 
 func (n *mockNotifier) RebalanceStart(c *Consumer) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance start %s", c.Group()))
+	n.messages = append(n.messages, "REBALANCE START")
 }
 func (n *mockNotifier) RebalanceOK(c *Consumer) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance ok %s", c.Group()))
+	n.messages = append(n.messages, "REBALANCE OK")
 }
 func (n *mockNotifier) RebalanceError(c *Consumer, err error) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance error %s: %s", c.Group(), err.Error()))
+	n.messages = append(n.messages, "REBALANCE ERROR")
+}
+func (n *mockNotifier) CommitError(c *Consumer, err error) {
+	n.messages = append(n.messages, "COMMIT ERROR")
 }
