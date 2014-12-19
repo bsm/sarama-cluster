@@ -32,30 +32,6 @@ var _ = Describe("PartitionSlice", func() {
 
 })
 
-var _ = Describe("GUID", func() {
-
-	BeforeEach(func() {
-		cGUID.hostname = "testhost"
-		cGUID.pid = 20100
-	})
-
-	AfterEach(func() {
-		cGUID.inc = 0
-	})
-
-	It("should create GUIDs", func() {
-		cGUID.inc = 0xffffffff
-		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
-		Expect(NewGUIDAt("prefix", time.Unix(1414141414, 0))).To(Equal("prefix-testhost-20100-1414141414-1"))
-	})
-
-	It("should increment correctly", func() {
-		cGUID.inc = 0xffffffff - 1
-		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-4294967295"))
-		Expect(NewGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
-	})
-})
-
 /*********************************************************************
  * TEST HOOK
  *********************************************************************/
@@ -88,17 +64,7 @@ var _ = BeforeSuite(func() {
 	Eventually(func() *os.Process {
 		return testState.kafka.Process
 	}).ShouldNot(BeNil())
-
-	// Create partition
-	time.Sleep(2 * time.Second)
-	out, _ := exec.Command(testDir(t_KAFKA_VERSION, "bin", "kafka-topics.sh"),
-		"--create",
-		"--topic", t_TOPIC,
-		"--zookeeper", "127.0.0.1:22181",
-		"--partitions", "12",
-		"--replication-factor", "1",
-	).Output()
-	Expect(string(out)).To(ContainSubstring("Created topic"))
+	time.Sleep(3 * time.Second)
 
 	// Create and wait for client
 	client, err := newClient()
@@ -151,10 +117,6 @@ func testDir(tokens ...string) string {
 	return path.Join(tokens...)
 }
 
-func testConsumerConfig() *sarama.ConsumerConfig {
-	return sarama.NewConsumerConfig()
-}
-
 func seedMessages(client *sarama.Client, count int) error {
 	producer, err := sarama.NewSimpleProducer(client, t_TOPIC, nil)
 	if err != nil {
@@ -163,7 +125,8 @@ func seedMessages(client *sarama.Client, count int) error {
 	defer producer.Close()
 
 	for i := 0; i < count; i++ {
-		err := producer.SendMessage(nil, sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i)))
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		err := producer.SendMessage(kv, kv)
 		if err != nil {
 			return err
 		}
@@ -173,12 +136,12 @@ func seedMessages(client *sarama.Client, count int) error {
 
 type mockNotifier struct{ messages []string }
 
-func (n *mockNotifier) RebalanceStart(cg *ConsumerGroup) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance start %s", cg.Name()))
+func (n *mockNotifier) RebalanceStart(c *Consumer) {
+	n.messages = append(n.messages, fmt.Sprintf("rebalance start %s", c.Group()))
 }
-func (n *mockNotifier) RebalanceOK(cg *ConsumerGroup) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance ok %s", cg.Name()))
+func (n *mockNotifier) RebalanceOK(c *Consumer) {
+	n.messages = append(n.messages, fmt.Sprintf("rebalance ok %s", c.Group()))
 }
-func (n *mockNotifier) RebalanceError(cg *ConsumerGroup, err error) {
-	n.messages = append(n.messages, fmt.Sprintf("rebalance error %s: %s", cg.Name(), err.Error()))
+func (n *mockNotifier) RebalanceError(c *Consumer, err error) {
+	n.messages = append(n.messages, fmt.Sprintf("rebalance error %s: %s", c.Group(), err.Error()))
 }

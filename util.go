@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
@@ -26,12 +27,12 @@ func init() {
 }
 
 // Create a new GUID
-func NewGUID(prefix string) string {
-	return NewGUIDAt(prefix, time.Now())
+func newGUID(prefix string) string {
+	return newGUIDAt(prefix, time.Now())
 }
 
 // Create a new GUID for a certain time
-func NewGUIDAt(prefix string, at time.Time) string {
+func newGUIDAt(prefix string, at time.Time) string {
 	cGUID.Lock()
 	defer cGUID.Unlock()
 
@@ -39,20 +40,9 @@ func NewGUIDAt(prefix string, at time.Time) string {
 	return fmt.Sprintf("%s-%s-%d-%d-%d", prefix, cGUID.hostname, cGUID.pid, at.Unix(), cGUID.inc)
 }
 
-// Partition information
-type Partition struct {
-	ID   int32
-	Addr string // Leader address
-}
+type int32Slice []int32
 
-// A sortable slice of Partition structs
-type PartitionSlice []Partition
-
-func (s PartitionSlice) Len() int { return len(s) }
-func (s PartitionSlice) Less(i, j int) bool {
-	if s[i].Addr == s[j].Addr {
-		return s[i].ID < s[j].ID
-	}
-	return s[i].Addr < s[j].Addr
-}
-func (s PartitionSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s int32Slice) Len() int           { return len(s) }
+func (s int32Slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s int32Slice) Less(i, j int) bool { return s[i] < s[j] }
+func (s int32Slice) Sorted() []int32    { sort.Sort(s); return []int32(s) }

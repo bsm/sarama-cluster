@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/samuel/go-zookeeper/zk"
@@ -12,8 +14,8 @@ var _ = Describe("ZK", func() {
 	var servers = []string{"localhost:22181"}
 
 	BeforeEach(func() {
-		subject, err = NewZK(servers, 1e9)
-		Expect(err).To(BeNil())
+		subject, err = NewZK(servers, time.Second)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
@@ -38,31 +40,31 @@ var _ = Describe("ZK", func() {
 			Expect(subject.RegisterGroup(t_GROUP)).To(BeNil())
 
 			sub, _, err := subject.Consumers(t_GROUP)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(sub).To(BeEmpty())
 
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/consumer-c", []byte{'C'}, true)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/consumer-a", []byte{'A'}, true)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/consumer-b", []byte{'B'}, true)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			sub, _, err = subject.Consumers(t_GROUP)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(sub).To(Equal([]string{"consumer-a", "consumer-b", "consumer-c"}))
 		})
 
 		It("should register groups", func() {
 			ok, err := subject.Exists("/consumers/" + t_GROUP + "/ids")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 
 			err = subject.RegisterGroup(t_GROUP)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			ok, err = subject.Exists("/consumers/" + t_GROUP + "/ids")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 		})
 
@@ -70,30 +72,33 @@ var _ = Describe("ZK", func() {
 			Expect(subject.RegisterGroup(t_GROUP)).To(BeNil())
 
 			other, err := NewZK(servers, 1e9)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
-			strs, _, err := subject.Consumers(t_GROUP)
-			Expect(err).To(BeNil())
+			strs, watch, err := subject.Consumers(t_GROUP)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(strs).To(BeEmpty())
 
 			err = subject.RegisterConsumer(t_GROUP, "consumer-b", "topic")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = other.RegisterConsumer(t_GROUP, "consumer-a", "topic")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = subject.RegisterConsumer(t_GROUP, "consumer-b", "topic")
 			Expect(err).To(Equal(zk.ErrNodeExists))
+			Expect((<-watch).Type).To(Equal(zk.EventNodeChildrenChanged))
 
-			strs, _, err = subject.Consumers(t_GROUP)
-			Expect(err).To(BeNil())
+			strs, watch, err = subject.Consumers(t_GROUP)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(strs).To(Equal([]string{"consumer-a", "consumer-b"}))
 
 			other.Close()
+			Expect((<-watch).Type).To(Equal(zk.EventNodeChildrenChanged))
+
 			strs, _, err = subject.Consumers(t_GROUP)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(strs).To(Equal([]string{"consumer-b"}))
 
 			val, _, err := subject.Get("/consumers/" + t_GROUP + "/ids/consumer-b")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(string(val)).To(ContainSubstring(`"subscription":{"topic":1}`))
 		})
 
@@ -124,14 +129,14 @@ var _ = Describe("ZK", func() {
 
 		It("should retrieve offsets", func() {
 			offset, err := subject.Offset(t_GROUP, t_TOPIC, 0)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(0)))
 
 			err = subject.Create("/consumers/"+t_GROUP+"/offsets/"+t_TOPIC+"/0", []byte("14798"), false)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			offset, err = subject.Offset(t_GROUP, t_TOPIC, 0)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(14798)))
 		})
 
@@ -139,13 +144,13 @@ var _ = Describe("ZK", func() {
 			Expect(subject.Commit(t_GROUP, t_TOPIC, 0, 999)).To(BeNil())
 
 			val, stat, err := subject.Get("/consumers/" + t_GROUP + "/offsets/" + t_TOPIC + "/0")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(string(val)).To(Equal(`999`))
 			Expect(stat.Version).To(Equal(int32(0)))
 
 			Expect(subject.Commit(t_GROUP, t_TOPIC, 0, 2999)).To(BeNil())
 			offset, err := subject.Offset(t_GROUP, t_TOPIC, 0)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(2999)))
 		})
 
@@ -155,7 +160,7 @@ var _ = Describe("ZK", func() {
 
 		It("should check path existence", func() {
 			ok, err := subject.Exists("/consumers/" + t_GROUP + "/ids")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 		})
 
@@ -164,9 +169,9 @@ var _ = Describe("ZK", func() {
 			Expect(ok).To(BeFalse())
 
 			err = subject.MkdirAll("/consumers/" + t_GROUP + "/ids")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = subject.MkdirAll("/consumers/" + t_GROUP + "/ids")
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			ok, _ = subject.Exists("/consumers/" + t_GROUP + "/ids")
 			Expect(ok).To(BeTrue())
@@ -174,16 +179,16 @@ var _ = Describe("ZK", func() {
 
 		It("should create entries", func() {
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, false)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'Y'}, false)
 			Expect(err).To(Equal(zk.ErrNodeExists))
 		})
 
 		It("should create ephemeral entries", func() {
 			other, err := NewZK(servers, 1e9)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 			err = other.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, true)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 
 			ok, _ := subject.Exists("/consumers/" + t_GROUP + "/ids/x")
 			Expect(ok).To(BeTrue())

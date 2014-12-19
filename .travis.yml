@@ -3,5 +3,5 @@ go:
   - 1.4
   - 1.3
   - 1.2
-script: make fuzztest
+script: make test
 

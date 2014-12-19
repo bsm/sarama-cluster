@@ -7,10 +7,7 @@ KAFKA_ROOT= test/$(KAFKA_DIR)
 default: test
 
 test: deps
-	go test -ginkgo.slowSpecThreshold=10
-
-fuzztest: deps
-	FUZZ=1 go test -ginkgo.slowSpecThreshold=60
+	go test -ginkgo.slowSpecThreshold=20
 
 .PHONY: test
 

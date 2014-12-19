@@ -11,8 +11,13 @@ import (
 )
 
 // ZK wraps a zookeeper connection
-type ZK struct {
-	*zk.Conn
+type ZK struct{ *zk.Conn }
+
+type zkConsumerConfig struct {
+	Pattern      string         `json:"pattern,omitempty"`
+	Subscription map[string]int `json:"subscription,omitempty"`
+	Timestamp    string         `json:"timestamp,omitempty"`
+	Version      int            `json:"version,omitempty"`
 }
 
 // NewZK creates a new connection instance
@@ -54,12 +59,17 @@ func (z *ZK) Claim(group, topic string, partitionID int32, id string) (err error
 	node := root + "/" + strconv.Itoa(int(partitionID))
 	tries := 0
 	for {
-		if err = z.Create(node, []byte(id), true); err == nil {
+		err := z.Create(node, []byte(id), true)
+		if err == nil {
 			break
-		} else if tries++; err != zk.ErrNodeExists || tries > 100 {
+		} else if err == zk.ErrNodeExists {
+			if tries++; tries > 20 {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		} else {
 			return err
 		}
-		time.Sleep(200 * time.Millisecond)
 	}
 	return nil
 }
@@ -123,11 +133,11 @@ func (z *ZK) RegisterGroup(group string) error {
 
 // RegisterConsumer registers a new consumer within a group
 func (z *ZK) RegisterConsumer(group, id, topic string) error {
-	data, err := json.Marshal(map[string]interface{}{
-		"pattern":      "white_list",
-		"subscription": map[string]int{topic: 1},
-		"timestamp":    strconv.FormatInt(time.Now().Unix(), 10),
-		"version":      1,
+	data, err := json.Marshal(&zkConsumerConfig{
+		Pattern:      "white_list",
+		Subscription: map[string]int{topic: 1},
+		Timestamp:    strconv.FormatInt(time.Now().Unix(), 10),
+		Version:      1,
 	})
 	if err != nil {
 		return err
