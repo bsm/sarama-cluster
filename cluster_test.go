@@ -7,6 +7,7 @@ import (
 	"path"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -134,17 +135,35 @@ func seedMessages(client *sarama.Client, count int) error {
 	return nil
 }
 
-type mockNotifier struct{ messages []string }
+type mockNotifier struct {
+	lock     sync.Mutex
+	messages []string
+}
 
 func (n *mockNotifier) RebalanceStart(c *Consumer) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
 	n.messages = append(n.messages, "REBALANCE START")
 }
 func (n *mockNotifier) RebalanceOK(c *Consumer) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
 	n.messages = append(n.messages, "REBALANCE OK")
 }
 func (n *mockNotifier) RebalanceError(c *Consumer, err error) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
 	n.messages = append(n.messages, "REBALANCE ERROR")
 }
 func (n *mockNotifier) CommitError(c *Consumer, err error) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
 	n.messages = append(n.messages, "COMMIT ERROR")
+}
+func (n *mockNotifier) Messages() []string {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	msgs := make([]string, len(n.messages))
+	copy(msgs, n.messages)
+	return msgs
 }

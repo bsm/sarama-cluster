@@ -9,6 +9,9 @@ default: test
 test: deps
 	go test -ginkgo.slowSpecThreshold=20
 
+race: deps
+	go test -ginkgo.slowSpecThreshold=20 -race
+
 .PHONY: test
 
 deps: $(KAFKA_ROOT)

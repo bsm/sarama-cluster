@@ -158,13 +158,7 @@ func (c *Consumer) Ack(event *sarama.ConsumerEvent) {
 
 // Commit persists ack'd offsets
 func (c *Consumer) Commit() error {
-	c.aLock.Lock()
-	snap := make(map[int32]int64, len(c.acked))
-	for num, offset := range c.acked {
-		snap[num] = offset
-	}
-	c.acked = make(map[int32]int64)
-	c.aLock.Unlock()
+	snap := c.resetAcked()
 	if len(snap) < 1 {
 		return nil
 	}
@@ -386,4 +380,16 @@ func (c *Consumer) pcsmConfig(offset int64) *sarama.ConsumerConfig {
 		config.OffsetValue = offset
 	}
 	return &config
+}
+
+// Creates a snapshot of acked and reset the current value
+func (c *Consumer) resetAcked() map[int32]int64 {
+	c.aLock.Lock()
+	defer c.aLock.Unlock()
+	snap := make(map[int32]int64, len(c.acked))
+	for num, offset := range c.acked {
+		snap[num] = offset
+	}
+	c.acked = make(map[int32]int64)
+	return snap
 }

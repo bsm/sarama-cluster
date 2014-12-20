@@ -59,7 +59,7 @@ var _ = Describe("Consumer", func() {
 		defer consumer.Close()
 
 		Eventually(func() []string {
-			return notifier.messages
+			return notifier.Messages()
 		}, "5s").Should(HaveLen(2))
 	})
 
@@ -119,7 +119,9 @@ var _ = Describe("Consumer", func() {
 				break
 			}
 		}
-		Expect(consumer.acked).NotTo(BeEmpty())
+		Eventually(func() map[int32]int64 {
+			return consumer.resetAcked()
+		}).ShouldNot(BeEmpty())
 	})
 
 	It("should auto-commit if requested", func() {
