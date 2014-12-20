@@ -9,6 +9,40 @@ import (
 	"gopkg.in/tomb.v2"
 )
 
+// Consumer configuration options
+type ConsumerConfig struct {
+	// Standard consumer configuration
+	*sarama.ConsumerConfig
+
+	// Set to true if you want to automatically ack
+	// every event once it has been consumed through
+	// the Consumer.Events() channel
+	AutoAck bool
+
+	// Enable automatic commits but setting this options.
+	// Automatic commits will remain disabled if is set to < 10ms
+	CommitEvery time.Duration
+
+	// Notifier instance to handle info/error
+	// notifications from the consumer
+	// Default: *LogNotifier
+	Notifier Notifier
+
+	customID string
+}
+
+func (c *ConsumerConfig) normalize() {
+	if c.ConsumerConfig == nil {
+		c.ConsumerConfig = sarama.NewConsumerConfig()
+	}
+	if c.Notifier == nil {
+		c.Notifier = &LogNotifier{Logger}
+	}
+	if c.CommitEvery < 10*time.Millisecond {
+		c.CommitEvery = 0
+	}
+}
+
 type Consumer struct {
 	id, group, topic string
 
@@ -236,8 +270,8 @@ func (c *Consumer) consumeLoop(done chan struct{}, wait *sync.WaitGroup, pcsm *s
 
 // Shutdown the consumer, triggered by the main loop
 func (c *Consumer) shutdown(claims Claims) error {
-	close(c.events)
 	err := c.reset(claims)
+	close(c.events)
 	c.zoo.Close()
 	return err
 }
@@ -292,7 +326,8 @@ func (c *Consumer) reset(claims Claims) (err error) {
 	err = c.Commit()
 
 	// Release claimed partitions, one by one, ignore errors
-	for partitionID, _ := range claims {
+	for partitionID, pcsm := range claims {
+		pcsm.Close()
 		c.zoo.Release(c.group, c.topic, partitionID, c.id)
 	}
 	return

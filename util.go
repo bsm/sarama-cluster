@@ -6,7 +6,24 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/Shopify/sarama"
 )
+
+/* Claims map */
+
+type Claims map[int32]*sarama.Consumer
+
+// PartitionIDs returns the associated partition IDs
+func (c Claims) PartitionIDs() []int32 {
+	ids := make(int32Slice, 0, len(c))
+	for id, _ := range c {
+		ids = append(ids, id)
+	}
+	return ids.Sorted()
+}
+
+/* GUID generator */
 
 // Global UID config
 var cGUID struct {
@@ -39,6 +56,8 @@ func newGUIDAt(prefix string, at time.Time) string {
 	cGUID.inc++
 	return fmt.Sprintf("%s-%s-%d-%d-%d", prefix, cGUID.hostname, cGUID.pid, at.Unix(), cGUID.inc)
 }
+
+/* Sortable int32Slice */
 
 type int32Slice []int32
 

@@ -10,17 +10,15 @@ import (
 
 var _ = Describe("ZK", func() {
 	var subject *ZK
-	var err error
-	var servers = []string{"localhost:22181"}
 
 	BeforeEach(func() {
-		subject, err = NewZK(servers, time.Second)
+		var err error
+		subject, err = NewZK(t_ZK_ADDRS, time.Second)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
 		if subject != nil {
-			Expect(subject.DeleteAll("/consumers/" + t_GROUP)).To(BeNil())
 			subject.Close()
 		}
 	})
@@ -71,7 +69,7 @@ var _ = Describe("ZK", func() {
 		It("should register consumers (ephemeral) ", func() {
 			Expect(subject.RegisterGroup(t_GROUP)).To(BeNil())
 
-			other, err := NewZK(servers, 1e9)
+			other, err := NewZK(t_ZK_ADDRS, 1e9)
 			Expect(err).NotTo(HaveOccurred())
 
 			strs, watch, err := subject.Consumers(t_GROUP)
@@ -168,7 +166,7 @@ var _ = Describe("ZK", func() {
 			ok, _ := subject.Exists("/consumers/" + t_GROUP + "/ids")
 			Expect(ok).To(BeFalse())
 
-			err = subject.MkdirAll("/consumers/" + t_GROUP + "/ids")
+			err := subject.MkdirAll("/consumers/" + t_GROUP + "/ids")
 			Expect(err).NotTo(HaveOccurred())
 			err = subject.MkdirAll("/consumers/" + t_GROUP + "/ids")
 			Expect(err).NotTo(HaveOccurred())
@@ -178,14 +176,14 @@ var _ = Describe("ZK", func() {
 		})
 
 		It("should create entries", func() {
-			err = subject.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, false)
+			err := subject.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, false)
 			Expect(err).NotTo(HaveOccurred())
 			err = subject.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'Y'}, false)
 			Expect(err).To(Equal(zk.ErrNodeExists))
 		})
 
 		It("should create ephemeral entries", func() {
-			other, err := NewZK(servers, 1e9)
+			other, err := NewZK(t_ZK_ADDRS, 1e9)
 			Expect(err).NotTo(HaveOccurred())
 			err = other.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, true)
 			Expect(err).NotTo(HaveOccurred())

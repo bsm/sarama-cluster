@@ -12,7 +12,7 @@ var _ = Describe("Consumer", func() {
 	var subject *Consumer
 	var client *sarama.Client
 	var newConsumer = func() (*Consumer, error) {
-		return NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, nil)
+		return NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, nil)
 	}
 
 	BeforeEach(func() {
@@ -27,7 +27,6 @@ var _ = Describe("Consumer", func() {
 
 	AfterEach(func() {
 		if subject != nil {
-			subject.zoo.DeleteAll("/consumers/" + t_GROUP)
 			subject.Close()
 			subject = nil
 		}
@@ -53,7 +52,7 @@ var _ = Describe("Consumer", func() {
 
 	It("should notify subscribed listener", func() {
 		notifier := &mockNotifier{messages: make([]string, 0)}
-		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
 			Notifier: notifier,
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -108,7 +107,7 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should auto-ack if requested", func() {
-		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
 			AutoAck: true,
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -124,7 +123,7 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should auto-commit if requested", func() {
-		consumer, err := NewConsumer(client, []string{"localhost:22181"}, t_GROUP, t_TOPIC, &ConsumerConfig{
+		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
 			AutoAck:     true,
 			CommitEvery: 10 * time.Millisecond,
 		})
@@ -185,7 +184,7 @@ var _ = Describe("Consumer", func() {
 
 		Eventually(func() []int32 {
 			return subject.Claims()
-		}, "5s").Should(HaveLen(2))
+		}, "10s").Should(HaveLen(2))
 		Expect(subject.acked).To(BeEmpty())
 
 		off1, err := subject.Offset(1)

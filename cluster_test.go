@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -41,6 +42,10 @@ const (
 	t_TOPIC         = "sarama-cluster-topic"
 	t_GROUP         = "sarama-cluster-group"
 	t_DIR           = "/tmp/sarama-cluster-test"
+)
+
+var (
+	t_ZK_ADDRS = []string{"localhost:22181"}
 )
 
 var _ = BeforeSuite(func() {
@@ -86,6 +91,13 @@ var _ = AfterSuite(func() {
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
+	AfterEach(func() {
+		zk, err := NewZK(t_ZK_ADDRS, time.Second)
+		Expect(err).NotTo(HaveOccurred())
+
+		zk.DeleteAll("/consumers/" + t_GROUP)
+		zk.Close()
+	})
 	RunSpecs(t, "sarama/cluster")
 }
 
@@ -101,7 +113,7 @@ func newClient() (*sarama.Client, error) {
 
 func testDir(tokens ...string) string {
 	_, filename, _, _ := runtime.Caller(1)
-	tokens = append([]string{path.Dir(filename), "test"}, tokens...)
+	tokens = append([]string{path.Dir(filename), "_test"}, tokens...)
 	return path.Join(tokens...)
 }
 

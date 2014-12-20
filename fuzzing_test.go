@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"runtime"
+
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -9,11 +11,7 @@ import (
 var _ = Describe("fuzzing", func() {
 
 	var fuzz = func(client *sarama.Client, id string, n int, errors chan error, events chan *sarama.ConsumerEvent) {
-		consumer, err := NewConsumer(client,
-			[]string{"localhost:22181"},
-			"sarama-cluster-fuzzing-test", t_TOPIC,
-			&ConsumerConfig{customID: id},
-		)
+		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{customID: id})
 		if err != nil {
 			errors <- err
 			return
@@ -36,6 +34,16 @@ var _ = Describe("fuzzing", func() {
 			}
 		}
 	}
+
+	var numGoroutine int
+
+	BeforeEach(func() {
+		numGoroutine = runtime.NumGoroutine()
+	})
+
+	AfterEach(func() {
+		Expect(runtime.NumGoroutine()).To(BeNumerically("~", numGoroutine, 15))
+	})
 
 	It("should consume uniquely across all consumers within a group", func() {
 		errors := make(chan error, 100)
