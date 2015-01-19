@@ -28,6 +28,10 @@ type ConsumerConfig struct {
 	// Default: *LogNotifier
 	Notifier Notifier
 
+	// Session timeout for the underlying zookeeper client
+	// Default: time.Second*1
+	ZookeeperSessionTimeout time.Duration
+
 	customID string
 }
 
@@ -40,6 +44,9 @@ func (c *ConsumerConfig) normalize() {
 	}
 	if c.CommitEvery < 10*time.Millisecond {
 		c.CommitEvery = 0
+	}
+	if c.ZookeeperSessionTimeout == 0 {
+		c.ZookeeperSessionTimeout = time.Second
 	}
 }
 
@@ -78,7 +85,7 @@ func NewConsumer(client *sarama.Client, zookeepers []string, group, topic string
 	}
 
 	// Connect to zookeeper
-	zoo, err := NewZK(zookeepers, time.Second)
+	zoo, err := NewZK(zookeepers, config.ZookeeperSessionTimeout)
 	if err != nil {
 		return nil, err
 	}
