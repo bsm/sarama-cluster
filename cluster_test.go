@@ -93,7 +93,7 @@ var _ = AfterSuite(func() {
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	AfterEach(func() {
-		zk, err := NewZK(t_ZK_ADDRS, time.Second)
+		zk, err := NewZK(t_ZK_ADDRS, "", time.Second)
 		Expect(err).NotTo(HaveOccurred())
 
 		zk.DeleteAll("/consumers/" + t_GROUP)

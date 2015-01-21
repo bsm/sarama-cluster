@@ -30,11 +30,11 @@ type ConsumerConfig struct {
 
 	// Session timeout for the underlying zookeeper client
 	// Default: time.Second*1
-	ZookeeperSessionTimeout time.Duration
+	ZKSessionTimeout time.Duration
 
 	// Chroot path of the kafka cluster inside zookeeper
 	// Default: ""
-	ZookeeperChrootPath string
+	ZKChrootPath string
 
 	customID string
 }
@@ -49,8 +49,8 @@ func (c *ConsumerConfig) normalize() {
 	if c.CommitEvery < 10*time.Millisecond {
 		c.CommitEvery = 0
 	}
-	if c.ZookeeperSessionTimeout == 0 {
-		c.ZookeeperSessionTimeout = time.Second
+	if c.ZKSessionTimeout == 0 {
+		c.ZKSessionTimeout = time.Second
 	}
 }
 
@@ -89,7 +89,8 @@ func NewConsumer(client *sarama.Client, zookeepers []string, group, topic string
 	}
 
 	// Connect to zookeeper
-	zoo, err := NewZK(zookeepers, config.ZookeeperChrootPath, config.ZookeeperSessionTimeout)
+	zoo, err := NewZK(zookeepers, config.ZKChrootPath, config.ZKSessionTimeout)
+
 	if err != nil {
 		return nil, err
 	}
