@@ -13,7 +13,7 @@ var _ = Describe("ZK", func() {
 
 	BeforeEach(func() {
 		var err error
-		subject, err = NewZK(t_ZK_ADDRS, time.Second)
+		subject, err = NewZK(t_ZK_ADDRS, "", time.Second)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -69,7 +69,7 @@ var _ = Describe("ZK", func() {
 		It("should register consumers (ephemeral) ", func() {
 			Expect(subject.RegisterGroup(t_GROUP)).To(BeNil())
 
-			other, err := NewZK(t_ZK_ADDRS, 1e9)
+			other, err := NewZK(t_ZK_ADDRS, "", 1e9)
 			Expect(err).NotTo(HaveOccurred())
 
 			strs, watch, err := subject.Consumers(t_GROUP)
@@ -183,7 +183,7 @@ var _ = Describe("ZK", func() {
 		})
 
 		It("should create ephemeral entries", func() {
-			other, err := NewZK(t_ZK_ADDRS, 1e9)
+			other, err := NewZK(t_ZK_ADDRS, "", 1e9)
 			Expect(err).NotTo(HaveOccurred())
 			err = other.Create("/consumers/"+t_GROUP+"/ids/x", []byte{'X'}, true)
 			Expect(err).NotTo(HaveOccurred())

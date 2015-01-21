@@ -11,7 +11,10 @@ import (
 )
 
 // ZK wraps a zookeeper connection
-type ZK struct{ *zk.Conn }
+type ZK struct {
+	conn       *zk.Conn
+	chrootPath string
+}
 
 type zkConsumerConfig struct {
 	Pattern      string         `json:"pattern,omitempty"`
@@ -21,12 +24,12 @@ type zkConsumerConfig struct {
 }
 
 // NewZK creates a new connection instance
-func NewZK(servers []string, recvTimeout time.Duration) (*ZK, error) {
+func NewZK(servers []string, chrootPath string, recvTimeout time.Duration) (*ZK, error) {
 	conn, _, err := zk.Connect(servers, recvTimeout)
 	if err != nil {
 		return nil, err
 	}
-	return &ZK{conn}, nil
+	return &ZK{conn: conn, chrootPath: chrootPath}, nil
 }
 
 /*******************************************************************
@@ -35,13 +38,13 @@ func NewZK(servers []string, recvTimeout time.Duration) (*ZK, error) {
 
 // Consumers returns all active consumers within a group
 func (z *ZK) Consumers(group string) ([]string, <-chan zk.Event, error) {
-	root := "/consumers/" + group + "/ids"
+	root := z.chrootPath + "/consumers/" + group + "/ids"
 	err := z.MkdirAll(root)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	strs, _, ch, err := z.ChildrenW(root)
+	strs, _, ch, err := z.conn.ChildrenW(root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -51,7 +54,7 @@ func (z *ZK) Consumers(group string) ([]string, <-chan zk.Event, error) {
 
 // Claim claims a topic/partition ownership for a consumer ID within a group
 func (z *ZK) Claim(group, topic string, partitionID int32, id string) (err error) {
-	root := "/consumers/" + group + "/owners/" + topic
+	root := z.chrootPath + "/consumers/" + group + "/owners/" + topic
 	if err = z.MkdirAll(root); err != nil {
 		return err
 	}
@@ -76,8 +79,8 @@ func (z *ZK) Claim(group, topic string, partitionID int32, id string) (err error
 
 // Release releases a claim
 func (z *ZK) Release(group, topic string, partitionID int32, id string) error {
-	node := "/consumers/" + group + "/owners/" + topic + "/" + strconv.Itoa(int(partitionID))
-	val, _, err := z.Get(node)
+	node := z.chrootPath + "/consumers/" + group + "/owners/" + topic + "/" + strconv.Itoa(int(partitionID))
+	val, _, err := z.conn.Get(node)
 
 	// Already deleted
 	if err == zk.ErrNoNode {
@@ -94,14 +97,14 @@ func (z *ZK) Release(group, topic string, partitionID int32, id string) error {
 
 // Commit commits an offset to a group/topic/partition
 func (z *ZK) Commit(group, topic string, partitionID int32, offset int64) (err error) {
-	root := "/consumers/" + group + "/offsets/" + topic
+	root := z.chrootPath + "/consumers/" + group + "/offsets/" + topic
 	if err = z.MkdirAll(root); err != nil {
 		return err
 	}
 
 	node := root + "/" + strconv.Itoa(int(partitionID))
 	data := []byte(strconv.FormatInt(offset, 10))
-	_, stat, err := z.Get(node)
+	_, stat, err := z.conn.Get(node)
 
 	// Try to create new node
 	if err == zk.ErrNoNode {
@@ -110,14 +113,14 @@ func (z *ZK) Commit(group, topic string, partitionID int32, offset int64) (err e
 		return err
 	}
 
-	_, err = z.Set(node, data, stat.Version)
+	_, err = z.conn.Set(node, data, stat.Version)
 	return
 }
 
 // Offset retrieves an offset to a group/topic/partition
 func (z *ZK) Offset(group, topic string, partitionID int32) (int64, error) {
-	node := "/consumers/" + group + "/offsets/" + topic + "/" + strconv.Itoa(int(partitionID))
-	val, _, err := z.Get(node)
+	node := z.chrootPath + "/consumers/" + group + "/offsets/" + topic + "/" + strconv.Itoa(int(partitionID))
+	val, _, err := z.conn.Get(node)
 	if err == zk.ErrNoNode {
 		return 0, nil
 	} else if err != nil {
@@ -128,7 +131,7 @@ func (z *ZK) Offset(group, topic string, partitionID int32) (int64, error) {
 
 // RegisterGroup creates/updates a group directory
 func (z *ZK) RegisterGroup(group string) error {
-	return z.MkdirAll("/consumers/" + group + "/ids")
+	return z.MkdirAll(z.chrootPath + "/consumers/" + group + "/ids")
 }
 
 // RegisterConsumer registers a new consumer within a group
@@ -143,12 +146,12 @@ func (z *ZK) RegisterConsumer(group, id, topic string) error {
 		return err
 	}
 
-	return z.Create("/consumers/"+group+"/ids/"+id, data, true)
+	return z.Create(z.chrootPath+"/consumers/"+group+"/ids/"+id, data, true)
 }
 
 // DeleteConsumer deletes the consumer from registry
 func (z *ZK) DeleteConsumer(group, id string) error {
-	return z.Delete("/consumers/"+group+"/ids/"+id, 0)
+	return z.conn.Delete(z.chrootPath+"/consumers/"+group+"/ids/"+id, 0)
 }
 
 /*******************************************************************
@@ -157,13 +160,13 @@ func (z *ZK) DeleteConsumer(group, id string) error {
 
 // Exists checks existence of a node
 func (z *ZK) Exists(node string) (ok bool, err error) {
-	ok, _, err = z.Conn.Exists(node)
+	ok, _, err = z.conn.Exists(node)
 	return
 }
 
 // DeleteAll deletes a node recursively
 func (z *ZK) DeleteAll(node string) (err error) {
-	children, stat, err := z.Children(node)
+	children, stat, err := z.conn.Children(node)
 	if err == zk.ErrNoNode {
 		return nil
 	} else if err != nil {
@@ -176,7 +179,7 @@ func (z *ZK) DeleteAll(node string) (err error) {
 		}
 	}
 
-	return z.Delete(node, stat.Version)
+	return z.conn.Delete(node, stat.Version)
 }
 
 // MkdirAll creates a directory recursively
@@ -188,7 +191,7 @@ func (z *ZK) MkdirAll(node string) (err error) {
 		}
 	}
 
-	_, err = z.Conn.Create(node, nil, 0, zk.WorldACL(zk.PermAll))
+	_, err = z.conn.Create(node, nil, 0, zk.WorldACL(zk.PermAll))
 	if err == zk.ErrNodeExists {
 		err = nil
 	}
@@ -205,6 +208,10 @@ func (z *ZK) Create(node string, value []byte, ephemeral bool) (err error) {
 	if ephemeral {
 		flags = zk.FlagEphemeral
 	}
-	_, err = z.Conn.Create(node, value, flags, zk.WorldACL(zk.PermAll))
+	_, err = z.conn.Create(node, value, flags, zk.WorldACL(zk.PermAll))
 	return
+}
+
+func (z *ZK) Close() {
+	z.conn.Close()
 }
