@@ -27,9 +27,15 @@ type zkConsumerConfig struct {
 // NewZK creates a new connection instance
 func NewZK(servers []string, chrootPath string, recvTimeout time.Duration) (*ZK, error) {
 	conn, _, err := zk.Connect(servers, recvTimeout)
+
 	if err != nil {
 		return nil, err
 	}
+
+	if !strings.HasPrefix(chrootPath, "/") {
+		chrootPath = "/" + chrootPath
+	}
+
 	return &ZK{Conn: conn, chrootPath: strings.TrimSuffix(chrootPath, "/")}, nil
 }
 
