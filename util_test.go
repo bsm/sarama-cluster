@@ -29,14 +29,14 @@ var _ = Describe("GUID", func() {
 
 	It("should create GUIDs", func() {
 		cGUID.inc = 0xffffffff
-		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
-		Expect(newGUIDAt("prefix", time.Unix(1414141414, 0))).To(Equal("prefix-testhost-20100-1414141414-1"))
+		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix:testhost:4e44cb31-4e84-0000-0000"))
+		Expect(newGUIDAt("prefix", time.Unix(1414141414, 0))).To(Equal("prefix:testhost:544a15e6-4e84-0000-0001"))
 	})
 
 	It("should increment correctly", func() {
 		cGUID.inc = 0xffffffff - 1
-		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-4294967295"))
-		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix-testhost-20100-1313131313-0"))
+		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix:testhost:4e44cb31-4e84-ffff-ffff"))
+		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix:testhost:4e44cb31-4e84-0000-0000"))
 	})
 })
 

@@ -14,6 +14,11 @@ type ConsumerConfig struct {
 	// Standard consumer configuration
 	*sarama.ConsumerConfig
 
+	// Consumer IDs have the form of PREFIX:HOSTNAME:UUID.
+	// This option allows to set a custom prefix.
+	// Defaults to the consumer group name.
+	IDPrefix string
+
 	// Set to true if you want to automatically ack
 	// every event once it has been consumed through
 	// the Consumer.Events() channel
@@ -90,9 +95,14 @@ func NewConsumer(client *sarama.Client, zookeepers []string, group, topic string
 		return nil, err
 	}
 
+	// Generate unique consumer ID
 	id := config.customID
 	if id == "" {
-		id = newGUID(group)
+		prefix := config.IDPrefix
+		if prefix == "" {
+			prefix = group
+		}
+		id = newGUID(prefix)
 	}
 
 	// Initialize consumer

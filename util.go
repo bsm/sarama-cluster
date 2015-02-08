@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -30,7 +30,6 @@ var cGUID struct {
 	hostname string
 	pid      int
 	inc      uint32
-	sync.Mutex
 }
 
 // Init GUID configuration
@@ -50,11 +49,10 @@ func newGUID(prefix string) string {
 
 // Create a new GUID for a certain time
 func newGUIDAt(prefix string, at time.Time) string {
-	cGUID.Lock()
-	defer cGUID.Unlock()
-
-	cGUID.inc++
-	return fmt.Sprintf("%s-%s-%d-%d-%d", prefix, cGUID.hostname, cGUID.pid, at.Unix(), cGUID.inc)
+	inc := atomic.AddUint32(&cGUID.inc, 1)
+	uts := at.Unix()
+	ins := fmt.Sprintf("%08x", inc)
+	return fmt.Sprintf("%s:%s:%08x-%04x-%s-%s", prefix, cGUID.hostname, uts, cGUID.pid, ins[:4], ins[4:])
 }
 
 /* Sortable int32Slice */
