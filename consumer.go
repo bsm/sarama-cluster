@@ -412,12 +412,15 @@ func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
 	offset, err := c.Offset(partitionID)
 	if err != nil {
 		return nil, err
-	}
-
-	if offset < 1 {
+	} else if offset < 1 {
 		offset = sarama.OffsetOldest
 	}
-	return c.consumer.ConsumePartition(c.topic, partitionID, offset)
+
+	pcsm, err := c.consumer.ConsumePartition(c.topic, partitionID, offset)
+	if err == sarama.ErrOffsetOutOfRange {
+		pcsm, err = c.consumer.ConsumePartition(c.topic, partitionID, sarama.OffsetOldest)
+	}
+	return pcsm, err
 }
 
 // Registers consumer with zookeeper
