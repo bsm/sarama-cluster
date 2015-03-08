@@ -1,4 +1,4 @@
-package cluster // import "gopkg.in/bsm/sarama-cluster.v1"
+package cluster
 
 import (
 	"io/ioutil"
