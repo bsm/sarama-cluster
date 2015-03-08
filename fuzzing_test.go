@@ -1,8 +1,6 @@
 package cluster
 
 import (
-	"runtime"
-
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -35,16 +33,6 @@ var _ = Describe("fuzzing", func() {
 			}
 		}
 	}
-
-	var numGoroutine int
-
-	BeforeEach(func() {
-		numGoroutine = runtime.NumGoroutine()
-	})
-
-	AfterEach(func() {
-		Expect(runtime.NumGoroutine()).To(BeNumerically("~", numGoroutine, 15))
-	})
 
 	It("should consume uniquely across all consumers within a group", func() {
 		errors := make(chan error, 100)
