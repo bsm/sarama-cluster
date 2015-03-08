@@ -35,16 +35,22 @@ var _ = Describe("PartitionSlice", func() {
 // --------------------------------------------------------------------
 
 const (
-	tKafkaDir = "kafka_2.10-0.8.1.1"
-	tTopic    = "sarama-cluster-topic"
-	tGroup    = "sarama-cluster-group"
-	tDir      = "/tmp/sarama-cluster-test"
+	tTopic = "sarama-cluster-topic"
+	tGroup = "sarama-cluster-group"
+	tDir   = "/tmp/sarama-cluster-test"
 )
 
 var (
-	tZKAddrs    = []string{"127.0.0.1:22181"}
+	tKafkaDir   = "kafka_2.11-0.8.2.0"
 	tKafkaAddrs = []string{"127.0.0.1:29092"}
+	tZKAddrs    = []string{"127.0.0.1:22181"}
 )
+
+func init() {
+	if dir := os.Getenv("KAFKA_DIR"); dir != "" {
+		tKafkaDir = dir
+	}
+}
 
 // --------------------------------------------------------------------
 
