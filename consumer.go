@@ -359,7 +359,6 @@ func (c *Consumer) rebalance(claims Claims) (Claims, <-chan zk.Event, error) {
 		}
 
 		// Make new claims
-		claims = make(Claims, len(partitions))
 		for _, part := range partitions {
 			pcsm, err := c.claim(part.ID)
 			if err != nil {
@@ -397,6 +396,7 @@ func (c *Consumer) reset(claims Claims) (err error) {
 	// Release claimed partitions, ignore errors
 	for partitionID := range claims {
 		c.zoo.Release(c.group, c.topic, partitionID, c.id)
+		delete(claims, partitionID)
 	}
 
 	return
