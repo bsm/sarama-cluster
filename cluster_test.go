@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
-	"runtime"
+	"path/filepath"
 	"sort"
 	"sync"
 	"testing"
@@ -33,107 +32,105 @@ var _ = Describe("PartitionSlice", func() {
 
 })
 
-/*********************************************************************
- * TEST HOOK
- *********************************************************************/
+// --------------------------------------------------------------------
 
 const (
-	t_KAFKA_VERSION = "kafka_2.10-0.8.1.1"
-	t_CLIENT        = "sarama-cluster-client"
-	t_TOPIC         = "sarama-cluster-topic"
-	t_GROUP         = "sarama-cluster-group"
-	t_DIR           = "/tmp/sarama-cluster-test"
+	tKafkaDir = "kafka_2.10-0.8.1.1"
+	tTopic    = "sarama-cluster-topic"
+	tGroup    = "sarama-cluster-group"
+	tDir      = "/tmp/sarama-cluster-test"
 )
 
 var (
-	t_ZK_ADDRS = []string{"localhost:22181"}
+	tZKAddrs    = []string{"127.0.0.1:22181"}
+	tKafkaAddrs = []string{"127.0.0.1:29092"}
 )
 
+// --------------------------------------------------------------------
+
 var _ = BeforeSuite(func() {
-	runner := testDir(t_KAFKA_VERSION, "bin", "kafka-run-class.sh")
-	testState.zookeeper = exec.Command(runner, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
-	testState.kafka = exec.Command(runner, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
-	testState.kafka.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
+	runner := testDir(tKafkaDir, "bin", "kafka-run-class.sh")
+	scenario.zk = exec.Command(runner, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
+	// scenario.zk.Stderr = os.Stderr
+	// scenario.zk.Stdout = os.Stdout
+
+	scenario.kafka = exec.Command(runner, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
+	scenario.kafka.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
+	// scenario.kafka.Stderr = os.Stderr
+	// scenario.kafka.Stdout = os.Stdout
 
 	// Create Dir
-	Expect(os.MkdirAll(t_DIR, 0775)).NotTo(HaveOccurred())
+	Expect(os.MkdirAll(tDir, 0775)).NotTo(HaveOccurred())
 
 	// Start ZK & Kafka
-	Expect(testState.zookeeper.Start()).NotTo(HaveOccurred())
-	Expect(testState.kafka.Start()).NotTo(HaveOccurred())
+	Expect(scenario.zk.Start()).NotTo(HaveOccurred())
+	Expect(scenario.kafka.Start()).NotTo(HaveOccurred())
 
 	// Wait for client
 	var client *sarama.Client
 	Eventually(func() error {
 		var err error
-		client, err = newClient()
+		client, err = sarama.NewClient(tKafkaAddrs, nil)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 	defer client.Close()
 
+	// Ensure we can retrieve partition info
 	Eventually(func() error {
-		_, err := client.Partitions(t_TOPIC)
+		_, err := client.Partitions(tTopic)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 
 	// Seed messages
-	Expect(seedMessages(client, 10000)).NotTo(HaveOccurred())
+	producer, err := sarama.NewSyncProducerFromClient(client)
+	Expect(err).NotTo(HaveOccurred())
+	defer producer.Close()
+
+	parts := make(map[int32]int64)
+	for i := 0; i < 10000; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		pt, off, err := producer.SendMessage(tTopic, kv, kv)
+		Expect(err).NotTo(HaveOccurred())
+		parts[pt] = off
+	}
 })
 
 var _ = AfterSuite(func() {
-	if testState.kafka != nil {
-		testState.kafka.Process.Kill()
+	if scenario.kafka != nil {
+		scenario.kafka.Process.Kill()
 	}
-	if testState.zookeeper != nil {
-		testState.zookeeper.Process.Kill()
+	if scenario.zk != nil {
+		scenario.zk.Process.Kill()
 	}
-	Expect(os.RemoveAll(t_DIR)).NotTo(HaveOccurred())
+	Expect(os.RemoveAll(tDir)).NotTo(HaveOccurred())
 })
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	AfterEach(func() {
-		zk, err := NewZK(t_ZK_ADDRS, time.Second)
+		zk, err := NewZK(tZKAddrs, time.Second)
 		Expect(err).NotTo(HaveOccurred())
 
-		zk.DeleteAll("/consumers/" + t_GROUP)
+		zk.DeleteAll("/consumers/" + tGroup)
 		zk.Close()
 	})
 	RunSpecs(t, "sarama/cluster")
 }
 
-/*******************************************************************
- * TEST HELPERS
- *******************************************************************/
+// --------------------------------------------------------------------
 
-var testState struct{ kafka, zookeeper *exec.Cmd }
+var scenario struct{ kafka, zk *exec.Cmd }
 
-func newClient() (*sarama.Client, error) {
-	return sarama.NewClient(t_CLIENT, []string{"127.0.0.1:29092"}, nil)
+func newConsumer(conf *Config) (*Consumer, error) {
+	return NewConsumer(tKafkaAddrs, tZKAddrs, tGroup, tTopic, conf)
 }
 
 func testDir(tokens ...string) string {
-	_, filename, _, _ := runtime.Caller(1)
-	tokens = append([]string{path.Dir(filename), "_test"}, tokens...)
-	return path.Join(tokens...)
+	tokens = append([]string{"_test"}, tokens...)
+	return filepath.Join(tokens...)
 }
 
-func seedMessages(client *sarama.Client, count int) error {
-	producer, err := sarama.NewSimpleProducer(client, t_TOPIC, nil)
-	if err != nil {
-		return err
-	}
-	defer producer.Close()
-
-	for i := 0; i < count; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		err := producer.SendMessage(kv, kv)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// --------------------------------------------------------------------
 
 type mockNotifier struct {
 	lock     sync.Mutex

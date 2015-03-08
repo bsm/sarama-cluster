@@ -20,3 +20,9 @@ deps: $(KAFKA_ROOT)
 $(KAFKA_ROOT):
 	@mkdir -p $(dir $@)
 	cd $(dir $@) && curl $(KAFKA_SRC) | tar xz
+
+start_zookeeper:
+	$(KAFKA_ROOT)/bin/kafka-run-class.sh -name zookeeper org.apache.zookeeper.server.ZooKeeperServerMain _test/zookeeper.properties
+
+start_kafka:
+	KAFKA_HEAP_OPTS='-Xmx1G -Xms1G' $(KAFKA_ROOT)/bin/kafka-run-class.sh -name kafkaServer kafka.Kafka _test/server.properties

@@ -10,18 +10,11 @@ import (
 
 var _ = Describe("Consumer", func() {
 	var subject *Consumer
-	var client *sarama.Client
-	var newConsumer = func() (*Consumer, error) {
-		return NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, nil)
-	}
 
 	BeforeEach(func() {
 		var err error
 
-		client, err = newClient()
-		Expect(err).NotTo(HaveOccurred())
-
-		subject, err = newConsumer()
+		subject, err = newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -30,14 +23,10 @@ var _ = Describe("Consumer", func() {
 			subject.Close()
 			subject = nil
 		}
-		if client != nil {
-			client.Close()
-			subject = nil
-		}
 	})
 
 	It("can be created & closed", func() {
-		lst, _, err := subject.zoo.Consumers(t_GROUP)
+		lst, _, err := subject.zoo.Consumers(tGroup)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lst).To(HaveLen(1))
 		Expect(subject.Close()).NotTo(HaveOccurred())
@@ -52,9 +41,7 @@ var _ = Describe("Consumer", func() {
 
 	It("should notify subscribed listener", func() {
 		notifier := &mockNotifier{messages: make([]string, 0)}
-		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
-			Notifier: notifier,
-		})
+		consumer, err := newConsumer(&Config{Notifier: notifier})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
@@ -68,7 +55,7 @@ var _ = Describe("Consumer", func() {
 			return subject.Claims()
 		}, "5s").Should(ConsistOf([]int32{0, 1, 2, 3}))
 
-		second, err := newConsumer()
+		second, err := newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer second.Close()
 
@@ -79,7 +66,7 @@ var _ = Describe("Consumer", func() {
 			return second.Claims()
 		}, "5s").Should(ConsistOf([]int32{2, 3}))
 
-		third, err := newConsumer()
+		third, err := newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer third.Close()
 
@@ -94,27 +81,25 @@ var _ = Describe("Consumer", func() {
 		}, "5s").Should(ConsistOf([]int32{3}))
 	})
 
-	It("should process events", func() {
+	It("should process messages", func() {
 		res := make(map[int32]int)
 		cnt := 0
-		for evt := range subject.Events() {
-			if cnt++; cnt > 800 {
+		for evt := range subject.Messages() {
+			if cnt++; cnt > 4000 {
 				break
 			}
 			res[evt.Partition]++
 		}
-		Expect(len(res)).To(BeNumerically(">=", 3))
+		Expect(res).To(HaveLen(4))
 	})
 
 	It("should auto-ack if requested", func() {
-		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
-			AutoAck: true,
-		})
+		consumer, err := newConsumer(&Config{AutoAck: true})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
 		cnt := 0
-		for _ = range consumer.Events() {
+		for _ = range consumer.Messages() {
 			if cnt++; cnt > 10 {
 				break
 			}
@@ -125,15 +110,12 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should auto-commit if requested", func() {
-		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{
-			AutoAck:     true,
-			CommitEvery: 10 * time.Millisecond,
-		})
+		consumer, err := newConsumer(&Config{AutoAck: true, CommitEvery: 10 * time.Millisecond})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
 		cnt := 0
-		for _ = range consumer.Events() {
+		for _ = range consumer.Messages() {
 			if cnt++; cnt > 99 {
 				break
 			}
@@ -147,18 +129,18 @@ var _ = Describe("Consumer", func() {
 		}).Should(Equal(int64(100)))
 	})
 
-	It("should ack processed events", func() {
-		subject.Ack(&sarama.ConsumerEvent{Partition: 1, Offset: 17})
-		subject.Ack(&sarama.ConsumerEvent{Partition: 2, Offset: 15})
+	It("should ack processed messages", func() {
+		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 17})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 15})
 		Expect(subject.acked).To(Equal(map[int32]int64{1: 17, 2: 15}))
 
-		subject.Ack(&sarama.ConsumerEvent{Partition: 2, Offset: 0})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 0})
 		Expect(subject.acked).To(Equal(map[int32]int64{1: 17, 2: 15}))
 	})
 
 	It("should allow to commit manually/periodically", func() {
-		subject.Ack(&sarama.ConsumerEvent{Partition: 1, Offset: 27})
-		subject.Ack(&sarama.ConsumerEvent{Partition: 2, Offset: 25})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 27})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 25})
 		Expect(subject.Commit()).NotTo(HaveOccurred())
 		Expect(subject.acked).To(Equal(map[int32]int64{}))
 
@@ -176,11 +158,11 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should auto-commit on close/rebalance", func() {
-		subject.Ack(&sarama.ConsumerEvent{Partition: 1, Offset: 37})
-		subject.Ack(&sarama.ConsumerEvent{Partition: 2, Offset: 35})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 37})
+		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 35})
 		Expect(subject.acked).To(HaveLen(2))
 
-		second, err := newConsumer()
+		second, err := newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer second.Close()
 

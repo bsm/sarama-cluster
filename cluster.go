@@ -8,7 +8,7 @@ import (
 // Standard logger, set to ioutil.Discard by default
 var Logger = log.New(ioutil.Discard, "[sarama/cluster]", log.LstdFlags)
 
-// A notifier is an abstract event notification handler
+// Notifier is an abstract event notification handler
 // By default, sarama/cluster uses the LogNotifier which logs events to standard logger
 type Notifier interface {
 	RebalanceStart(*Consumer)
@@ -17,7 +17,7 @@ type Notifier interface {
 	CommitError(*Consumer, error)
 }
 
-// Standard log notifier, writes to Logger
+// LogNotifier is the standard log notifier, uses a Logger as the backend
 type LogNotifier struct{ *log.Logger }
 
 func (n *LogNotifier) RebalanceStart(c *Consumer) {

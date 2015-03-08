@@ -7,13 +7,13 @@ in: http://kafka.apache.org/documentation.html#distributionimpl
 
 Usage example:
 
-  client, err := sarama.NewClient("my-client", []string{"127.0.0.1:29092"}, nil)
+  client, err := sarama.NewClient("my-client", []string{"127.0.0.1:9092"}, nil)
   if err != nil {
     log.Fatal(err)
   }
   defer client.Close()
 
-  consumer, err := cluster.NewConsumer(client, []string{"localhost:22181"}, "my-group", "my-topic", &cluster.ConsumerConfig{
+  consumer, err := cluster.NewConsumer(client, []string{"localhost:2181"}, "my-group", "my-topic", &cluster.ConsumerConfig{
     CommitEvery: time.Second, // Enable periodic auto-commits
   })
   if err != nil {

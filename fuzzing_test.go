@@ -10,24 +10,25 @@ import (
 
 var _ = Describe("fuzzing", func() {
 
-	var fuzz = func(client *sarama.Client, id string, n int, errors chan error, events chan *sarama.ConsumerEvent) {
-		consumer, err := NewConsumer(client, t_ZK_ADDRS, t_GROUP, t_TOPIC, &ConsumerConfig{customID: id})
+	var fuzz = func(id string, n int, errors chan error, messages chan *sarama.ConsumerMessage) {
+		consumer, err := newConsumer(&Config{customID: id})
 		if err != nil {
 			errors <- err
 			return
 		}
 		defer consumer.Close()
 
-		cnt := 0
-		for evt := range consumer.Events() {
-			if evt.Err != nil {
-				errors <- evt.Err
-				return
+		go func() {
+			for msg := range consumer.Errors() {
+				errors <- msg.Err
 			}
+		}()
 
-			evt.Key = []byte("PROCESSED BY " + id)
-			events <- evt
-			consumer.Ack(evt)
+		cnt := 0
+		for msg := range consumer.Messages() {
+			msg.Key = []byte("PROCESSED BY " + id)
+			messages <- msg
+			consumer.Ack(msg)
 			if cnt++; cnt >= n {
 				errors <- nil
 				return
@@ -47,40 +48,36 @@ var _ = Describe("fuzzing", func() {
 
 	It("should consume uniquely across all consumers within a group", func() {
 		errors := make(chan error, 100)
-		events := make(chan *sarama.ConsumerEvent, 1e6)
+		messages := make(chan *sarama.ConsumerMessage, 1e6)
 
-		client, err := newClient()
-		Expect(err).NotTo(HaveOccurred())
-		defer client.Close()
+		go fuzz("A", 200, errors, messages)
+		go fuzz("B", 300, errors, messages)
+		Eventually(func() int { return len(messages) }, "10s").Should(BeNumerically(">=", 500))
 
-		go fuzz(client, "A", 200, errors, events)
-		go fuzz(client, "B", 300, errors, events)
-		Eventually(func() int { return len(events) }, "10s").Should(BeNumerically(">=", 500))
-
-		go fuzz(client, "C", 2700, errors, events)
-		go fuzz(client, "D", 1000, errors, events)
-		go fuzz(client, "E", 100, errors, events)
-		go fuzz(client, "F", 1200, errors, events)
-		go fuzz(client, "G", 4000, errors, events)
-		go fuzz(client, "H", 200, errors, events)
-		go fuzz(client, "I", 300, errors, events)
-		Eventually(func() int { return len(events) }, "30s").Should(BeNumerically(">=", 10000))
+		go fuzz("C", 2700, errors, messages)
+		go fuzz("D", 1000, errors, messages)
+		go fuzz("E", 100, errors, messages)
+		go fuzz("F", 1200, errors, messages)
+		go fuzz("G", 4000, errors, messages)
+		go fuzz("H", 200, errors, messages)
+		go fuzz("I", 300, errors, messages)
+		Eventually(func() int { return len(messages) }, "30s").Should(BeNumerically(">=", 10000))
 		Eventually(func() int { return len(errors) }, "30s").Should(Equal(9))
 
 		for len(errors) > 0 {
 			Expect(<-errors).NotTo(HaveOccurred())
 		}
 
-		byID := make(map[int64][]*sarama.ConsumerEvent, len(events))
-		for len(events) > 0 {
-			evt := <-events
-			uid := int64(evt.Partition)*1e9 + evt.Offset
-			byID[uid] = append(byID[uid], evt)
+		byID := make(map[int64][]*sarama.ConsumerMessage, len(messages))
+		for len(messages) > 0 {
+			msg := <-messages
+			uid := int64(msg.Partition)*1e9 + msg.Offset
+			byID[uid] = append(byID[uid], msg)
 		}
 
 		// Ensure each event was consumed only once
-		for _, evts := range byID {
-			Expect(evts).To(HaveLen(1))
+		for _, msgs := range byID {
+			Expect(msgs).To(HaveLen(1))
 		}
 	})
 
