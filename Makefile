@@ -6,16 +6,19 @@ KAFKA_ROOT= _test/$(KAFKA_DIR)
 
 default: test
 
-test: deps
-	go test -ginkgo.slowSpecThreshold=20
+test: testdeps
+	go test ./... -ginkgo.slowSpecThreshold=20
 
-race: deps
-	go test -ginkgo.slowSpecThreshold=20 -race
+testfull: testdeps
+	go test ./... -ginkgo.slowSpecThreshold=20
+	go test ./... -ginkgo.slowSpecThreshold=20 -cpu=2
+	go test ./... -ginkgo.slowSpecThreshold=20 -short -race
 
-.PHONY: test
+testdeps: $(KAFKA_ROOT)
 
-deps: $(KAFKA_ROOT)
-	go get -t ./...
+.PHONY: test testfull testdeps
+
+# ---------------------------------------------------------------------
 
 $(KAFKA_ROOT):
 	@mkdir -p $(dir $@)
