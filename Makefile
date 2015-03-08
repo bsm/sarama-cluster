@@ -7,12 +7,12 @@ KAFKA_ROOT= _test/$(KAFKA_DIR)
 default: test
 
 test: testdeps
-	go test ./... -ginkgo.slowSpecThreshold=20
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=20
 
 testfull: testdeps
-	go test ./... -ginkgo.slowSpecThreshold=20
-	go test ./... -ginkgo.slowSpecThreshold=20 -cpu=2
-	go test ./... -ginkgo.slowSpecThreshold=20 -short -race
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=20
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=20 -cpu=2
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=20 -short -race
 
 testdeps: $(KAFKA_ROOT)
 
