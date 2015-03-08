@@ -4,7 +4,7 @@ go:
   - 1.3
 script: make race
 install:
-  - go get -t ./...
   - mkdir -p $HOME/gopath/src/gopkg.in
   - mv $HOME/gopath/src/github.com/bsm/sarama-cluster $HOME/gopath/src/gopkg.in/bsm/sarama-cluster.v1
   - cd $HOME/gopath/src/gopkg.in/bsm/sarama-cluster.v1
+  - go get -t ./...
