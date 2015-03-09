@@ -43,15 +43,20 @@ var _ = Describe("fuzzing", func() {
 		go fuzz("B", 3*units, errors, messages)
 		Eventually(func() int { return len(messages) }, "10s").Should(BeNumerically(">=", 5*units))
 
-		go fuzz("C", 27*units, errors, messages)
+		go fuzz("C", 22*units, errors, messages)
 		go fuzz("D", 10*units, errors, messages)
 		go fuzz("E", 1*units, errors, messages)
 		go fuzz("F", 12*units, errors, messages)
-		go fuzz("G", 40*units, errors, messages)
+		go fuzz("G", 30*units, errors, messages)
 		go fuzz("H", 2*units, errors, messages)
 		go fuzz("I", 3*units, errors, messages)
+		go fuzz("J", 1*units, errors, messages)
+		go fuzz("K", 1*units, errors, messages)
+		go fuzz("L", 1*units, errors, messages)
+		go fuzz("M", 2*units, errors, messages)
+		go fuzz("N", 10*units, errors, messages)
 		Eventually(func() int { return len(messages) }, "30s").Should(BeNumerically(">=", 100*units))
-		Eventually(func() int { return len(errors) }, "10s").Should(Equal(9))
+		Eventually(func() int { return len(errors) }, "10s").Should(Equal(14))
 
 		for len(errors) > 0 {
 			Expect(<-errors).NotTo(HaveOccurred())

@@ -65,6 +65,7 @@ type Consumer struct {
 	messages chan *sarama.ConsumerMessage
 	errors   chan *sarama.ConsumerError
 
+	read    map[int32]int64
 	acked   map[int32]int64
 	aLock   sync.Mutex
 	partIDs []int32
@@ -147,6 +148,7 @@ func NewConsumerFromClient(client *sarama.Client, zookeepers []string, group, to
 		client:   client,
 		consumer: scsmr,
 
+		read:    make(map[int32]int64),
 		acked:   make(map[int32]int64),
 		partIDs: make([]int32, 0),
 
@@ -214,6 +216,7 @@ func (c *Consumer) Commit() error {
 	}
 
 	for partitionID, offset := range snap {
+		// fmt.Printf("$,%s,%d,%d\n", c.id, partitionID, offset+1)
 		if err := c.zoo.Commit(c.group, c.topic, partitionID, offset+1); err != nil {
 			return err
 		}
@@ -292,21 +295,28 @@ func (c *Consumer) consumeLoop(done chan struct{}, wait *sync.WaitGroup, pcsm *s
 	for {
 		select {
 		case msg := <-pcsm.Messages():
+			// fmt.Printf("*,%s,%d,%d\n", c.id, msg.Partition, msg.Offset)
 			select {
 			case c.messages <- msg:
+				// fmt.Printf("+,%s,%d,%d\n", c.id, msg.Partition, msg.Offset)
+				c.read[msg.Partition] = msg.Offset + 1
 				if c.config.AutoAck {
 					c.Ack(msg)
 				}
 			case <-done:
+				// fmt.Printf("@,%s\n", c.id)
 				return
 			}
 		case msg := <-pcsm.Errors():
 			select {
 			case c.errors <- msg:
+				//fmt.Printf("@,%s\n", c.id)
 			case <-done:
+				// fmt.Printf("@,%s\n", c.id)
 				return
 			}
 		case <-done:
+			// fmt.Printf("@,%s\n", c.id)
 			return
 		}
 	}
@@ -409,8 +419,11 @@ func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
 		return nil, err
 	} else if offset < 1 {
 		offset = sarama.OffsetOldest
+	} else if last := c.read[partitionID]; offset < last {
+		offset = last
 	}
 
+	// fmt.Printf(">,%s,%d,%d\n", c.id, partitionID, offset)
 	pcsm, err := c.consumer.ConsumePartition(c.topic, partitionID, offset)
 	if err == sarama.ErrOffsetOutOfRange {
 		pcsm, err = c.consumer.ConsumePartition(c.topic, partitionID, sarama.OffsetOldest)
