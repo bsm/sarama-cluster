@@ -7,13 +7,7 @@ in: http://kafka.apache.org/documentation.html#distributionimpl
 
 Usage example:
 
-  client, err := sarama.NewClient("my-client", []string{"127.0.0.1:9092"}, nil)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer client.Close()
-
-  consumer, err := cluster.NewConsumer(client, []string{"localhost:2181"}, "my-group", "my-topic", &cluster.ConsumerConfig{
+  consumer, err := cluster.NewConsumer([]string{"127.0.0.1:9092"}, []string{"localhost:2181"}, "my-group", "my-topic", &cluster.ConsumerConfig{
     CommitEvery: time.Second, // Enable periodic auto-commits
   })
   if err != nil {
@@ -24,9 +18,17 @@ Usage example:
   // This will also trigger a commit.
   defer consumer.Close()
 
-  for event := range consumer.Events() {
-    fmt.Println(string(event.Value))  // Print to STDOUT
-    consumer.Ack(event)               // Mark event as processed
+  // You MUST consume errors (in a background goroutine) to avoid deadlocks.
+  go func() {
+    for msg := range consumer.Errors() {
+      fmt.Println("ERROR:", msg.Error())
+    }
+  }()
+
+  // Consume messages.
+  for event := range consumer.Messages() {
+    fmt.Println("MESSAGE:", string(event.Value))  // Print to STDOUT
+    consumer.Ack(event)                           // Mark event as processed
   }
 */
 package cluster

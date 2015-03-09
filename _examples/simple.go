@@ -47,7 +47,7 @@ func produce(client *sarama.Client, n int) error {
 func consume(client *sarama.Client, n int, cb func(*sarama.ConsumerMessage)) error {
 	// Connect consumer
 	config := cluster.Config{CommitEvery: time.Second}
-	consumer, err := cluster.NewConsumer(client, []string{"localhost:2181"}, "my-group", "my-topic", &config)
+	consumer, err := cluster.NewConsumerFromClient(client, []string{"localhost:2181"}, "my-group", "my-topic", &config)
 	if err != nil {
 		return err
 	}
