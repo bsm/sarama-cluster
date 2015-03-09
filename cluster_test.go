@@ -44,11 +44,15 @@ var (
 	tKafkaDir   = "kafka_2.11-0.8.2.0"
 	tKafkaAddrs = []string{"127.0.0.1:29092"}
 	tZKAddrs    = []string{"127.0.0.1:22181"}
+	tN          = 100000
 )
 
 func init() {
 	if dir := os.Getenv("KAFKA_DIR"); dir != "" {
 		tKafkaDir = dir
+	}
+	if testing.Short() {
+		tN = 10000
 	}
 }
 
@@ -88,17 +92,13 @@ var _ = BeforeSuite(func() {
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 
 	// Seed messages
-	producer, err := sarama.NewSyncProducerFromClient(client)
+	producer, err := sarama.NewProducerFromClient(client)
 	Expect(err).NotTo(HaveOccurred())
-	defer producer.Close()
-
-	parts := make(map[int32]int64)
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < tN; i++ {
 		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		pt, off, err := producer.SendMessage(tTopic, kv, kv)
-		Expect(err).NotTo(HaveOccurred())
-		parts[pt] = off
+		producer.Input() <- &sarama.ProducerMessage{Topic: tTopic, Key: kv, Value: kv}
 	}
+	Expect(producer.Close()).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {

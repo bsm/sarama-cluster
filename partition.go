@@ -23,20 +23,6 @@ func (s PartitionSlice) Less(i, j int) bool {
 	return s[i].Addr < s[j].Addr
 }
 
-// ConsistOf returns true if all IDs are matched by the claims
-func (s PartitionSlice) ConsistOf(c Claims) bool {
-	if len(s) != len(c) {
-		return false
-	}
-
-	for _, item := range s {
-		if _, ok := c[item.ID]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 // Select is an algorithm to distribute a subset of a partitions
 // to one of the consumers
 func (s PartitionSlice) Select(consumerID string, consumerIDs []string) PartitionSlice {

@@ -243,14 +243,12 @@ func (c *Consumer) signalLoop() error {
 		}
 
 		// Start a rebalance cycle
-		acquired, watch, err := c.rebalance(claims)
+		watch, err := c.rebalance(claims)
 		if err != nil {
 			c.config.Notifier.RebalanceError(c, err)
+			c.reset(claims)
 			continue
 		}
-
-		// Remember current claims
-		claims = acquired
 
 		// Start a goroutine for each partition
 		done := make(chan struct{})
@@ -335,46 +333,43 @@ func (c *Consumer) closeAll() {
 }
 
 // Rebalance cycle, triggered by the main loop
-func (c *Consumer) rebalance(claims Claims) (Claims, <-chan zk.Event, error) {
+func (c *Consumer) rebalance(claims Claims) (<-chan zk.Event, error) {
 	c.config.Notifier.RebalanceStart(c)
+
+	// Commit and release existing claims
+	if err := c.reset(claims); err != nil {
+		return nil, err
+	}
 
 	// Fetch consumer list
 	consumerIDs, watch, err := c.zoo.Consumers(c.group)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Fetch partitions list
 	partitions, err := c.partitions()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Determine partitions and claim if changed
-	if partitions = partitions.Select(c.id, consumerIDs); !partitions.ConsistOf(claims) {
+	partitions = partitions.Select(c.id, consumerIDs)
 
-		// Commit and release existing claims
-		if err := c.reset(claims); err != nil {
-			return nil, nil, err
+	// Make new claims
+	for _, part := range partitions {
+		pcsm, err := c.claim(part.ID)
+		if err != nil {
+			return nil, err
 		}
-
-		// Make new claims
-		for _, part := range partitions {
-			pcsm, err := c.claim(part.ID)
-			if err != nil {
-				c.reset(claims)
-				return nil, nil, err
-			}
-			claims[part.ID] = pcsm
-		}
-
-		c.pLock.Lock()
-		c.partIDs = claims.PartitionIDs()
-		c.pLock.Unlock()
+		claims[part.ID] = pcsm
 	}
 
+	c.pLock.Lock()
+	c.partIDs = claims.PartitionIDs()
+	c.pLock.Unlock()
 	c.config.Notifier.RebalanceOK(c)
-	return claims, watch, nil
+	return watch, nil
 }
 
 // Commits offset and releases all claims

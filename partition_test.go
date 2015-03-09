@@ -22,18 +22,6 @@ var _ = Describe("PartitionSlice", func() {
 		Expect(slice).To(BeEquivalentTo(PartitionSlice{p2, p6, p1, p3, p5, p4}))
 	})
 
-	It("should compare with claims", func() {
-		p1 := Partition{Addr: "host1:9093", ID: 1}
-		p2 := Partition{Addr: "host1:9092", ID: 2}
-		slice := PartitionSlice{p1, p2}
-
-		Expect(slice.ConsistOf(Claims{2: nil, 1: nil})).To(BeTrue())
-		Expect(slice.ConsistOf(Claims{1: nil, 2: nil})).To(BeTrue())
-		Expect(slice.ConsistOf(Claims{1: nil, 2: nil, 3: nil})).To(BeFalse())
-		Expect(slice.ConsistOf(Claims{1: nil})).To(BeFalse())
-		Expect(slice.ConsistOf(Claims{7: nil, 8: nil})).To(BeFalse())
-	})
-
 	It("should determine which partitions to select", func() {
 		testCases := []struct {
 			one string

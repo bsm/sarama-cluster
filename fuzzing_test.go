@@ -35,22 +35,23 @@ var _ = Describe("fuzzing", func() {
 	}
 
 	It("should consume uniquely across all consumers within a group", func() {
+		units := tN / 100
 		errors := make(chan error, 100)
-		messages := make(chan *sarama.ConsumerMessage, 1e6)
+		messages := make(chan *sarama.ConsumerMessage, tN+100)
 
-		go fuzz("A", 200, errors, messages)
-		go fuzz("B", 300, errors, messages)
-		Eventually(func() int { return len(messages) }, "10s").Should(BeNumerically(">=", 500))
+		go fuzz("A", 2*units, errors, messages)
+		go fuzz("B", 3*units, errors, messages)
+		Eventually(func() int { return len(messages) }, "10s").Should(BeNumerically(">=", 5*units))
 
-		go fuzz("C", 2700, errors, messages)
-		go fuzz("D", 1000, errors, messages)
-		go fuzz("E", 100, errors, messages)
-		go fuzz("F", 1200, errors, messages)
-		go fuzz("G", 4000, errors, messages)
-		go fuzz("H", 200, errors, messages)
-		go fuzz("I", 300, errors, messages)
-		Eventually(func() int { return len(messages) }, "30s").Should(BeNumerically(">=", 10000))
-		Eventually(func() int { return len(errors) }, "30s").Should(Equal(9))
+		go fuzz("C", 27*units, errors, messages)
+		go fuzz("D", 10*units, errors, messages)
+		go fuzz("E", 1*units, errors, messages)
+		go fuzz("F", 12*units, errors, messages)
+		go fuzz("G", 40*units, errors, messages)
+		go fuzz("H", 2*units, errors, messages)
+		go fuzz("I", 3*units, errors, messages)
+		Eventually(func() int { return len(messages) }, "30s").Should(BeNumerically(">=", 100*units))
+		Eventually(func() int { return len(errors) }, "10s").Should(Equal(9))
 
 		for len(errors) > 0 {
 			Expect(<-errors).NotTo(HaveOccurred())
