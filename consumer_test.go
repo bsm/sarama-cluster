@@ -160,7 +160,9 @@ var _ = Describe("Consumer", func() {
 	It("should auto-commit on close/rebalance", func() {
 		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 37})
 		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 35})
+		subject.aLock.Lock()
 		Expect(subject.acked).To(HaveLen(2))
+		subject.aLock.Unlock()
 
 		second, err := newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -169,7 +171,9 @@ var _ = Describe("Consumer", func() {
 		Eventually(func() []int32 {
 			return subject.Claims()
 		}, "10s").Should(HaveLen(2))
+		subject.aLock.Lock()
 		Expect(subject.acked).To(BeEmpty())
+		subject.aLock.Unlock()
 
 		off1, err := subject.Offset(1)
 		Expect(err).NotTo(HaveOccurred())
