@@ -66,6 +66,7 @@ type Consumer struct {
 	errors   chan *sarama.ConsumerError
 
 	read    map[int32]int64
+	rLock   sync.Mutex
 	acked   map[int32]int64
 	aLock   sync.Mutex
 	partIDs []int32
@@ -179,8 +180,9 @@ func (c *Consumer) Errors() <-chan *sarama.ConsumerError { return c.errors }
 // Claims exposes the partIDs partition ID
 func (c *Consumer) Claims() []int32 {
 	c.pLock.Lock()
-	defer c.pLock.Unlock()
-	return c.partIDs
+	ids := c.partIDs
+	c.pLock.Unlock()
+	return ids
 }
 
 // ID exposes the consumer ID
@@ -201,11 +203,10 @@ func (c *Consumer) Offset(partitionID int32) (int64, error) {
 // for the next Commit() call.
 func (c *Consumer) Ack(msg *sarama.ConsumerMessage) {
 	c.aLock.Lock()
-	defer c.aLock.Unlock()
-
 	if msg.Offset > c.acked[msg.Partition] {
 		c.acked[msg.Partition] = msg.Offset
 	}
+	c.aLock.Unlock()
 }
 
 // Commit persists ack'd offsets
@@ -299,7 +300,9 @@ func (c *Consumer) consumeLoop(done chan struct{}, wait *sync.WaitGroup, pcsm *s
 			select {
 			case c.messages <- msg:
 				// fmt.Printf("+,%s,%d,%d\n", c.id, msg.Partition, msg.Offset)
+				c.rLock.Lock()
 				c.read[msg.Partition] = msg.Offset + 1
+				c.rLock.Unlock()
 				if c.config.AutoAck {
 					c.Ack(msg)
 				}
@@ -419,7 +422,12 @@ func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
 		return nil, err
 	} else if offset < 1 {
 		offset = sarama.OffsetOldest
-	} else if last := c.read[partitionID]; offset < last {
+	}
+
+	c.rLock.Lock()
+	last := c.read[partitionID]
+	c.rLock.Unlock()
+	if offset < last {
 		offset = last
 	}
 
