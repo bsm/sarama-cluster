@@ -451,10 +451,11 @@ func (c *Consumer) partitions() (PartitionSlice, error) {
 func (c *Consumer) resetAcked() map[int32]int64 {
 	c.aLock.Lock()
 	defer c.aLock.Unlock()
+
 	snap := make(map[int32]int64, len(c.acked))
 	for num, offset := range c.acked {
 		snap[num] = offset
+		delete(c.acked, num)
 	}
-	c.acked = make(map[int32]int64)
 	return snap
 }

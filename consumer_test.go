@@ -10,6 +10,16 @@ import (
 
 var _ = Describe("Consumer", func() {
 	var subject *Consumer
+	var acked = func() map[int32]int64 {
+		subject.aLock.Lock()
+		defer subject.aLock.Unlock()
+
+		snap := make(map[int32]int64, len(subject.acked))
+		for num, off := range subject.acked {
+			snap[num] = off
+		}
+		return snap
+	}
 
 	BeforeEach(func() {
 		var err error
@@ -132,17 +142,17 @@ var _ = Describe("Consumer", func() {
 	It("should ack processed messages", func() {
 		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 17})
 		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 15})
-		Expect(subject.acked).To(Equal(map[int32]int64{1: 17, 2: 15}))
+		Expect(acked()).To(Equal(map[int32]int64{1: 17, 2: 15}))
 
 		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 0})
-		Expect(subject.acked).To(Equal(map[int32]int64{1: 17, 2: 15}))
+		Expect(acked()).To(Equal(map[int32]int64{1: 17, 2: 15}))
 	})
 
 	It("should allow to commit manually/periodically", func() {
 		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 27})
 		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 25})
 		Expect(subject.Commit()).NotTo(HaveOccurred())
-		Expect(subject.acked).To(Equal(map[int32]int64{}))
+		Expect(acked()).To(BeEmpty())
 
 		off1, err := subject.Offset(1)
 		Expect(err).NotTo(HaveOccurred())
@@ -160,9 +170,7 @@ var _ = Describe("Consumer", func() {
 	It("should auto-commit on close/rebalance", func() {
 		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 37})
 		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 35})
-		subject.aLock.Lock()
-		Expect(subject.acked).To(HaveLen(2))
-		subject.aLock.Unlock()
+		Expect(acked()).To(HaveLen(2))
 
 		second, err := newConsumer(nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -171,9 +179,7 @@ var _ = Describe("Consumer", func() {
 		Eventually(func() []int32 {
 			return subject.Claims()
 		}, "10s").Should(HaveLen(2))
-		subject.aLock.Lock()
-		Expect(subject.acked).To(BeEmpty())
-		subject.aLock.Unlock()
+		Expect(acked()).To(BeEmpty())
 
 		off1, err := subject.Offset(1)
 		Expect(err).NotTo(HaveOccurred())
