@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -189,4 +191,27 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off2).To(Equal(int64(36)))
 	})
+
+	It("should gracefully recover from offset-out-range errors", func() {
+		if testing.Short() {
+			return
+		}
+
+		Eventually(func() []string {
+			entries, _ := filepath.Glob("/tmp/sarama-cluster-test/kafka/sarama-cluster-topic-x-0/*.deleted")
+			return entries
+		}, "30s").ShouldNot(BeEmpty())
+
+		truncated, err := NewConsumer(tKafkaAddrs, tZKAddrs, tGroupX, tTopicX, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer truncated.Close()
+
+		Eventually(truncated.Messages()).Should(Receive(Equal(&sarama.ConsumerMessage{
+			Key:    []byte("PLAINDATA-00000032"),
+			Value:  []byte("PLAINDATA-00000032"),
+			Topic:  "sarama-cluster-topic-x",
+			Offset: 32,
+		})))
+	})
+
 })

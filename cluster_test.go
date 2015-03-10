@@ -35,9 +35,11 @@ var _ = Describe("PartitionSlice", func() {
 // --------------------------------------------------------------------
 
 const (
-	tTopic = "sarama-cluster-topic"
-	tGroup = "sarama-cluster-group"
-	tDir   = "/tmp/sarama-cluster-test"
+	tTopic  = "sarama-cluster-topic"
+	tTopicX = "sarama-cluster-topic-x"
+	tGroup  = "sarama-cluster-group"
+	tGroupX = "sarama-cluster-group-x"
+	tDir    = "/tmp/sarama-cluster-test"
 )
 
 var (
@@ -59,12 +61,13 @@ func init() {
 // --------------------------------------------------------------------
 
 var _ = BeforeSuite(func() {
-	runner := testDir(tKafkaDir, "bin", "kafka-run-class.sh")
-	scenario.zk = exec.Command(runner, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
+	run := testDir(tKafkaDir, "bin", "kafka-run-class.sh")
+	cli := testDir(tKafkaDir, "bin", "kafka-topics.sh")
+	scenario.zk = exec.Command(run, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
 	// scenario.zk.Stderr = os.Stderr
 	// scenario.zk.Stdout = os.Stdout
 
-	scenario.kafka = exec.Command(runner, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
+	scenario.kafka = exec.Command(run, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
 	scenario.kafka.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
 	// scenario.kafka.Stderr = os.Stderr
 	// scenario.kafka.Stdout = os.Stdout
@@ -91,14 +94,28 @@ var _ = BeforeSuite(func() {
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 
-	// Seed messages
-	producer, err := sarama.NewProducerFromClient(client)
+	// Create a special truncated topic with a small retention config
+	cmd := exec.Command(cli, "--zookeeper", "localhost:22181", "--create", "--topic", tTopicX, "--partitions", "1", "--replication-factor", "1", "--config", "segment.bytes=1024", "--config", "retention.bytes=4096")
+	Expect(cmd.Run()).NotTo(HaveOccurred())
+
+	// Seed messages to primary topic
+	p1, err := sarama.NewProducerFromClient(client)
 	Expect(err).NotTo(HaveOccurred())
 	for i := 0; i < tN; i++ {
 		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		producer.Input() <- &sarama.ProducerMessage{Topic: tTopic, Key: kv, Value: kv}
+		p1.Input() <- &sarama.ProducerMessage{Topic: tTopic, Key: kv, Value: kv}
 	}
-	Expect(producer.Close()).NotTo(HaveOccurred())
+	Expect(p1.Close()).NotTo(HaveOccurred())
+
+	// Seed messages to truncated topic
+	p2, err := sarama.NewSyncProducerFromClient(client)
+	Expect(err).NotTo(HaveOccurred())
+	for i := 0; i < 100; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		_, _, err := p2.SendMessage(tTopicX, kv, kv)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	Expect(p2.Close()).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {

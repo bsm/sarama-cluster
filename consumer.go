@@ -256,19 +256,23 @@ func (c *Consumer) signalLoop() error {
 
 		// Start a goroutine for each partition
 		done := make(chan struct{})
+		errs := make(chan struct{}, len(claims))
 		wait := new(sync.WaitGroup)
 		for _, pcsm := range claims {
 			wait.Add(1)
-			go c.consumeLoop(done, wait, pcsm)
+			go c.consumeLoop(done, errs, wait, pcsm)
 		}
 
 		// Wait for signals
 		select {
-		case <-c.closer.Dying():
+		case <-c.closer.Dying(): // on Close()
 			close(done)
 			wait.Wait()
 			return c.shutdown(claims)
-		case <-watch:
+		case <-watch: // on rebalance signal
+			close(done)
+			wait.Wait()
+		case <-errs: // on consume errors
 			close(done)
 			wait.Wait()
 		}
@@ -290,7 +294,7 @@ func (c *Consumer) commitLoop() error {
 }
 
 // Message consumer loop for a single partition consumer
-func (c *Consumer) consumeLoop(done chan struct{}, wait *sync.WaitGroup, pcsm *sarama.PartitionConsumer) {
+func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, pcsm *sarama.PartitionConsumer) {
 	defer wait.Done()
 
 	for {
@@ -311,9 +315,19 @@ func (c *Consumer) consumeLoop(done chan struct{}, wait *sync.WaitGroup, pcsm *s
 				return
 			}
 		case msg := <-pcsm.Errors():
+			if msg.Err == sarama.ErrOffsetOutOfRange {
+				offset, err := c.client.GetOffset(c.topic, msg.Partition, sarama.EarliestOffset)
+				if err == nil {
+					c.rLock.Lock()
+					c.read[msg.Partition] = offset
+					c.rLock.Unlock()
+				}
+				errs <- struct{}{}
+			}
+
 			select {
 			case c.errors <- msg:
-				//fmt.Printf("@,%s\n", c.id)
+				// fmt.Printf("!,%s,%d,%s\n", c.id, msg.Partition, msg.Error())
 			case <-done:
 				// fmt.Printf("@,%s\n", c.id)
 				return
@@ -432,11 +446,7 @@ func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
 	}
 
 	// fmt.Printf(">,%s,%d,%d\n", c.id, partitionID, offset)
-	pcsm, err := c.consumer.ConsumePartition(c.topic, partitionID, offset)
-	if err == sarama.ErrOffsetOutOfRange {
-		pcsm, err = c.consumer.ConsumePartition(c.topic, partitionID, sarama.OffsetOldest)
-	}
-	return pcsm, err
+	return c.consumer.ConsumePartition(c.topic, partitionID, offset)
 }
 
 // Registers consumer with zookeeper
