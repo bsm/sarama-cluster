@@ -11,21 +11,22 @@ import (
 
 // Config contains the consumer configuration options
 type Config struct {
-	// Standard consumer configuration
+	// Config contains the standard consumer configuration
 	*sarama.Config
 
-	// Consumer IDs have the form of PREFIX:HOSTNAME:UUID.
-	// This option allows to set a custom prefix.
+	// IDPrefix allows to force custom prefixes for consumer IDs.
+	// By default IDs have the form of PREFIX:HOSTNAME:UUID.
 	// Defaults to the consumer group name.
 	IDPrefix string
 
-	// Set to true if you want to automatically ack
+	// AutoAck will force the consumer to automatically ack
 	// every message once it has been consumed through
-	// the Consumer.Messages() channel
+	// the Consumer.Messages() channel if set to true
 	AutoAck bool
 
-	// Enable automatic commits but setting this options.
+	// CommitEvery enables automatic commits in periodic cycles.
 	// Automatic commits will remain disabled if is set to < 10ms
+	// Default: 0
 	CommitEvery time.Duration
 
 	// Notifier instance to handle info/error
@@ -33,8 +34,15 @@ type Config struct {
 	// Default: *LogNotifier
 	Notifier Notifier
 
-	// Session timeout for the underlying zookeeper client
-	// Default: time.Second*1
+	// DefaultOffsetMode tells the consumer where to resume, if no offset
+	// is stored or the stored offset is out-of-range.
+	// Permitted values are sarama.OffsetNewest and sarama.OffsetOldest.
+	// Default: sarama.OffsetOldest
+	DefaultOffsetMode int64
+
+	// ZKSessionTimeout sets the timeout for the underlying zookeeper client
+	// session.
+	// Default: 1s
 	ZKSessionTimeout time.Duration
 
 	customID string
@@ -49,6 +57,9 @@ func (c *Config) normalize() {
 	}
 	if c.CommitEvery < 10*time.Millisecond {
 		c.CommitEvery = 0
+	}
+	if c.DefaultOffsetMode != sarama.OffsetOldest && c.DefaultOffsetMode != sarama.OffsetOldest {
+		c.DefaultOffsetMode = sarama.OffsetOldest
 	}
 	if c.ZKSessionTimeout == 0 {
 		c.ZKSessionTimeout = time.Second
@@ -164,7 +175,7 @@ func NewConsumerFromClient(client *sarama.Client, zookeepers []string, group, to
 	}
 
 	consumer.closer.Go(consumer.signalLoop)
-	if config.CommitEvery != 0 {
+	if config.CommitEvery > 0 {
 		consumer.closer.Go(consumer.commitLoop)
 	}
 	return consumer, nil
@@ -287,6 +298,7 @@ func (c *Consumer) commitLoop() error {
 			return nil
 		case <-time.After(c.config.CommitEvery):
 		}
+
 		if err := c.Commit(); err != nil {
 			c.config.Notifier.CommitError(c, err)
 		}
@@ -435,7 +447,7 @@ func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
 	if err != nil {
 		return nil, err
 	} else if offset < 1 {
-		offset = sarama.OffsetOldest
+		offset = c.config.DefaultOffsetMode
 	}
 
 	c.rLock.Lock()
