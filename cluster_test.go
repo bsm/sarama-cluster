@@ -80,7 +80,7 @@ var _ = BeforeSuite(func() {
 	Expect(scenario.kafka.Start()).NotTo(HaveOccurred())
 
 	// Wait for client
-	var client *sarama.Client
+	var client sarama.Client
 	Eventually(func() error {
 		var err error
 		client, err = sarama.NewClient(tKafkaAddrs, nil)

@@ -69,8 +69,8 @@ func (c *Config) normalize() {
 type Consumer struct {
 	id, group, topic string
 
-	client   *sarama.Client
-	consumer *sarama.Consumer
+	client   sarama.Client
+	consumer sarama.Consumer
 	config   *Config
 	zoo      *ZK
 	messages chan *sarama.ConsumerMessage
@@ -111,7 +111,7 @@ func NewConsumer(addrs, zookeepers []string, group, topic string, config *Config
 
 // NewConsumerFromClient creates a new consumer for a given topic, reuing an existing client
 // You MUST call Close() to avoid leaks.
-func NewConsumerFromClient(client *sarama.Client, zookeepers []string, group, topic string, config *Config) (*Consumer, error) {
+func NewConsumerFromClient(client sarama.Client, zookeepers []string, group, topic string, config *Config) (*Consumer, error) {
 	if config == nil {
 		config = new(Config)
 	}
@@ -306,7 +306,7 @@ func (c *Consumer) commitLoop() error {
 }
 
 // Message consumer loop for a single partition consumer
-func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, pcsm *sarama.PartitionConsumer) {
+func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, pcsm sarama.PartitionConsumer) {
 	defer wait.Done()
 
 	for {
@@ -420,7 +420,7 @@ func (c *Consumer) reset(claims Claims) (err error) {
 	wait := sync.WaitGroup{}
 	for _, pcsm := range claims {
 		wait.Add(1)
-		go func(c *sarama.PartitionConsumer) {
+		go func(c sarama.PartitionConsumer) {
 			defer wait.Done()
 			c.Close()
 		}(pcsm)
@@ -437,7 +437,7 @@ func (c *Consumer) reset(claims Claims) (err error) {
 }
 
 // Claims a partition
-func (c *Consumer) claim(partitionID int32) (*sarama.PartitionConsumer, error) {
+func (c *Consumer) claim(partitionID int32) (sarama.PartitionConsumer, error) {
 	err := c.zoo.Claim(c.group, c.topic, partitionID, c.id)
 	if err != nil {
 		return nil, err

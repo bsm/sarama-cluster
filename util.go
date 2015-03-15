@@ -12,7 +12,7 @@ import (
 
 /* Claims map */
 
-type Claims map[int32]*sarama.PartitionConsumer
+type Claims map[int32]sarama.PartitionConsumer
 
 // PartitionIDs returns the associated partition IDs
 func (c Claims) PartitionIDs() []int32 {
