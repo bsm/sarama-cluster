@@ -328,7 +328,7 @@ func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, p
 			}
 		case msg := <-pcsm.Errors():
 			if msg.Err == sarama.ErrOffsetOutOfRange {
-				offset, err := c.client.GetOffset(c.topic, msg.Partition, sarama.EarliestOffset)
+				offset, err := c.client.GetOffset(c.topic, msg.Partition, sarama.OffsetOldest)
 				if err == nil {
 					c.rLock.Lock()
 					c.read[msg.Partition] = offset
