@@ -4,6 +4,11 @@
 
 Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go client library for Apache Kafka 0.8 (and later).
 
+## Important
+
+The sarama API is unfortunately very unstable. We are trying to keep this library up-to-date with sarama's latest master
+and tag new releases with references to sarama's commit SHA1 they were tested against.
+
 ## Documentation
 
 Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
@@ -21,7 +26,7 @@ To run tests, call:
 
     (The MIT License)
 
-    Copyright (c) 2014 Black Square Media Ltd
+    Copyright (c) 2015 Black Square Media Ltd
 
     Permission is hereby granted, free of charge, to any person obtaining
     a copy of this software and associated documentation files (the

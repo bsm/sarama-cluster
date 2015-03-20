@@ -196,7 +196,7 @@ var _ = Describe("Consumer", func() {
 		Eventually(func() []string {
 			entries, _ := filepath.Glob("/tmp/sarama-cluster-test/kafka/sarama-cluster-topic-x-0/*.deleted")
 			return entries
-		}, "30s").ShouldNot(BeEmpty())
+		}, "30s", "1s").ShouldNot(BeEmpty())
 
 		truncated, err := NewConsumer(tKafkaAddrs, tZKAddrs, tGroupX, tTopicX, nil)
 		Expect(err).NotTo(HaveOccurred())

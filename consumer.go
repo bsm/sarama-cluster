@@ -45,10 +45,14 @@ type Config struct {
 	// Default: 1s
 	ZKSessionTimeout time.Duration
 
-	customID string
+	customID     string
+	returnErrors bool
 }
 
-func (c *Config) normalize() {
+func (c *Config) normalize() *Config {
+	if c == nil {
+		c = &Config{}
+	}
 	if c.Config == nil {
 		c.Config = sarama.NewConfig()
 	}
@@ -64,6 +68,7 @@ func (c *Config) normalize() {
 	if c.ZKSessionTimeout == 0 {
 		c.ZKSessionTimeout = time.Second
 	}
+	return c
 }
 
 type Consumer struct {
@@ -91,9 +96,7 @@ type Consumer struct {
 // NewConsumer creates a new consumer instance.
 // You MUST call Close() to avoid leaks.
 func NewConsumer(addrs, zookeepers []string, group, topic string, config *Config) (*Consumer, error) {
-	if config == nil {
-		config = new(Config)
-	}
+	config = config.normalize()
 
 	client, err := sarama.NewClient(addrs, config.Config)
 	if err != nil {
@@ -112,10 +115,11 @@ func NewConsumer(addrs, zookeepers []string, group, topic string, config *Config
 // NewConsumerFromClient creates a new consumer for a given topic, reuing an existing client
 // You MUST call Close() to avoid leaks.
 func NewConsumerFromClient(client sarama.Client, zookeepers []string, group, topic string, config *Config) (*Consumer, error) {
-	if config == nil {
-		config = new(Config)
-	}
-	config.normalize()
+	config = config.normalize()
+
+	// Always propagate errors to cluster consumer, but retain the original setting
+	config.returnErrors = client.Config().Consumer.Return.Errors
+	client.Config().Consumer.Return.Errors = true
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
@@ -323,10 +327,11 @@ func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, p
 					c.Ack(msg)
 				}
 			case <-done:
-				// fmt.Printf("@,%s\n", c.id)
+				// fmt.Printf("@+,%s\n", c.id)
 				return
 			}
 		case msg := <-pcsm.Errors():
+			// fmt.Printf("!,%s,%d,%s\n", c.id, msg.Partition, msg.Error())
 			if msg.Err == sarama.ErrOffsetOutOfRange {
 				offset, err := c.client.GetOffset(c.topic, msg.Partition, sarama.OffsetOldest)
 				if err == nil {
@@ -337,15 +342,19 @@ func (c *Consumer) consumeLoop(done, errs chan struct{}, wait *sync.WaitGroup, p
 				errs <- struct{}{}
 			}
 
-			select {
-			case c.errors <- msg:
-				// fmt.Printf("!,%s,%d,%s\n", c.id, msg.Partition, msg.Error())
-			case <-done:
-				// fmt.Printf("@,%s\n", c.id)
-				return
+			if !c.config.returnErrors {
+				select {
+				case c.errors <- msg:
+					// fmt.Printf("-,%s,%d,%s\n", c.id, msg.Partition, msg.Error())
+				case <-done:
+					// fmt.Printf("@-,%s\n", c.id)
+					return
+				}
+			} else {
+				sarama.Logger.Println(msg)
 			}
 		case <-done:
-			// fmt.Printf("@,%s\n", c.id)
+			// fmt.Printf("@@,%s\n", c.id)
 			return
 		}
 	}

@@ -99,7 +99,7 @@ var _ = BeforeSuite(func() {
 	Expect(cmd.Run()).NotTo(HaveOccurred())
 
 	// Seed messages to primary topic
-	p1, err := sarama.NewProducerFromClient(client)
+	p1, err := sarama.NewAsyncProducerFromClient(client)
 	Expect(err).NotTo(HaveOccurred())
 	for i := 0; i < tN; i++ {
 		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
@@ -112,7 +112,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	for i := 0; i < 100; i++ {
 		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		_, _, err := p2.SendMessage(tTopicX, kv, kv)
+		_, _, err := p2.SendMessage(&sarama.ProducerMessage{Topic: tTopicX, Key: kv, Value: kv})
 		Expect(err).NotTo(HaveOccurred())
 	}
 	Expect(p2.Close()).NotTo(HaveOccurred())
