@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"fmt"
+
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -9,7 +11,9 @@ import (
 var _ = Describe("fuzzing", func() {
 
 	var fuzz = func(id string, n int, errors chan error, messages chan *sarama.ConsumerMessage) {
-		consumer, err := newConsumer(&Config{customID: id})
+		config := sarama.NewConfig()
+		config.Consumer.Return.Errors = true
+		consumer, err := newConsumer(nil, &Config{Config: config, customID: id})
 		if err != nil {
 			errors <- err
 			return
@@ -62,10 +66,10 @@ var _ = Describe("fuzzing", func() {
 			Expect(<-errors).NotTo(HaveOccurred())
 		}
 
-		byID := make(map[int64][]*sarama.ConsumerMessage, len(messages))
+		byID := make(map[string][]*sarama.ConsumerMessage, len(messages))
 		for len(messages) > 0 {
 			msg := <-messages
-			uid := int64(msg.Partition)*1e9 + msg.Offset
+			uid := fmt.Sprintf("%s-%d:%d", msg.Topic, msg.Partition, msg.Offset)
 			byID[uid] = append(byID[uid], msg)
 		}
 

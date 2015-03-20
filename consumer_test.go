@@ -16,7 +16,7 @@ var _ = Describe("Consumer", func() {
 	BeforeEach(func() {
 		var err error
 
-		subject, err = newConsumer(nil)
+		subject, err = newConsumer(nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -36,14 +36,23 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should claim partitions", func() {
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1, 2, 3}))
+		Eventually(func() []string { return subject.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-0",
+			"sarama-cluster-topic-a-1",
+			"sarama-cluster-topic-a-2",
+			"sarama-cluster-topic-a-3",
+			"sarama-cluster-topic-b-0",
+			"sarama-cluster-topic-b-1",
+			"sarama-cluster-topic-b-2",
+			"sarama-cluster-topic-b-3",
+			"sarama-cluster-topic-b-4",
+			"sarama-cluster-topic-b-5",
+		}))
 	})
 
 	It("should notify subscribed listener", func() {
 		notifier := &mockNotifier{messages: make([]string, 0)}
-		consumer, err := newConsumer(&Config{Notifier: notifier})
+		consumer, err := newConsumer(nil, &Config{Notifier: notifier})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
@@ -53,50 +62,74 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should release partitions & rebalance when new consumers join", func() {
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1, 2, 3}))
+		Eventually(func() []string { return subject.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-0",
+			"sarama-cluster-topic-a-1",
+			"sarama-cluster-topic-a-2",
+			"sarama-cluster-topic-a-3",
+			"sarama-cluster-topic-b-0",
+			"sarama-cluster-topic-b-1",
+			"sarama-cluster-topic-b-2",
+			"sarama-cluster-topic-b-3",
+			"sarama-cluster-topic-b-4",
+			"sarama-cluster-topic-b-5",
+		}))
 
-		second, err := newConsumer(nil)
+		second, err := newConsumer(nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer second.Close()
 
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1}))
-		Eventually(func() []int32 {
-			return second.Claims()
-		}, "5s").Should(ConsistOf([]int32{2, 3}))
+		Eventually(func() []string { return subject.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-0",
+			"sarama-cluster-topic-a-1",
+			"sarama-cluster-topic-b-0",
+			"sarama-cluster-topic-b-1",
+			"sarama-cluster-topic-b-2",
+		}))
+		Eventually(func() []string { return second.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-2",
+			"sarama-cluster-topic-a-3",
+			"sarama-cluster-topic-b-3",
+			"sarama-cluster-topic-b-4",
+			"sarama-cluster-topic-b-5",
+		}))
 
-		third, err := newConsumer(nil)
+		third, err := newConsumer(nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer third.Close()
 
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0}))
-		Eventually(func() []int32 {
-			return second.Claims()
-		}, "5s").Should(ConsistOf([]int32{1, 2}))
-		Eventually(func() []int32 {
-			return third.Claims()
-		}, "5s").Should(ConsistOf([]int32{3}))
+		Eventually(func() []string { return subject.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-0",
+			"sarama-cluster-topic-b-0",
+			"sarama-cluster-topic-b-1",
+		}))
+		Eventually(func() []string { return second.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-1",
+			"sarama-cluster-topic-a-2",
+			"sarama-cluster-topic-b-2",
+			"sarama-cluster-topic-b-3",
+		}))
+		Eventually(func() []string { return third.Claims() }, "5s").Should(Equal([]string{
+			"sarama-cluster-topic-a-3",
+			"sarama-cluster-topic-b-4",
+			"sarama-cluster-topic-b-5",
+		}))
 	})
 
 	It("should process messages", func() {
-		res := make(map[int32]int)
+		res := make(map[topicPartition]int)
 		cnt := 0
 		for evt := range subject.Messages() {
-			if cnt++; cnt > 4000 {
+			if cnt++; cnt > 5000 {
 				break
 			}
-			res[evt.Partition]++
+			res[topicPartition{evt.Topic, evt.Partition}]++
 		}
-		Expect(res).To(HaveLen(4))
+		Expect(len(res)).To(BeNumerically(">=", 6))
 	})
 
 	It("should auto-ack if requested", func() {
-		consumer, err := newConsumer(&Config{AutoAck: true})
+		consumer, err := newConsumer(nil, &Config{AutoAck: true})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
@@ -106,13 +139,13 @@ var _ = Describe("Consumer", func() {
 				break
 			}
 		}
-		Eventually(func() map[int32]int64 {
+		Eventually(func() map[topicPartition]int64 {
 			return consumer.resetAcked()
 		}).ShouldNot(BeEmpty())
 	})
 
 	It("should auto-commit if requested", func() {
-		consumer, err := newConsumer(&Config{AutoAck: true, CommitEvery: 10 * time.Millisecond})
+		consumer, err := newConsumer(nil, &Config{AutoAck: true, CommitEvery: 10 * time.Millisecond})
 		Expect(err).NotTo(HaveOccurred())
 		defer consumer.Close()
 
@@ -123,67 +156,67 @@ var _ = Describe("Consumer", func() {
 			}
 		}
 		Eventually(func() int64 {
-			n1, _ := consumer.Offset(0)
-			n2, _ := consumer.Offset(1)
-			n3, _ := consumer.Offset(2)
-			n4, _ := consumer.Offset(3)
+			n1, _ := consumer.Offset(tTopicA, 0)
+			n2, _ := consumer.Offset(tTopicA, 1)
+			n3, _ := consumer.Offset(tTopicA, 2)
+			n4, _ := consumer.Offset(tTopicA, 3)
 			return n1 + n2 + n3 + n4
 		}).Should(Equal(int64(100)))
 	})
 
 	It("should ack processed messages", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 17})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 15})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 1, Offset: 17})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 2, Offset: 15})
 		Expect(subject.Commit()).NotTo(HaveOccurred())
 
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 0})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 2, Offset: 0})
 		Expect(subject.Commit()).NotTo(HaveOccurred())
 
-		off1, err := subject.Offset(1)
+		off1, err := subject.Offset(tTopicA, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off1).To(Equal(int64(18)))
 
-		off2, err := subject.Offset(2)
+		off2, err := subject.Offset(tTopicA, 2)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off2).To(Equal(int64(16)))
 	})
 
 	It("should allow to commit manually/periodically", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 27})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 25})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 1, Offset: 27})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 2, Offset: 25})
 		Expect(subject.Commit()).NotTo(HaveOccurred())
 		Expect(subject.Commit()).NotTo(HaveOccurred())
 
-		off1, err := subject.Offset(1)
+		off1, err := subject.Offset(tTopicA, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off1).To(Equal(int64(28)))
 
-		off2, err := subject.Offset(2)
+		off2, err := subject.Offset(tTopicA, 2)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off2).To(Equal(int64(26)))
 
-		off3, err := subject.Offset(3)
+		off3, err := subject.Offset(tTopicA, 3)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off3).To(Equal(int64(0)))
 	})
 
 	It("should auto-commit on close/rebalance", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 37})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 35})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 1, Offset: 37})
+		subject.Ack(&sarama.ConsumerMessage{Topic: tTopicA, Partition: 2, Offset: 35})
 
-		second, err := newConsumer(nil)
+		second, err := newConsumer(nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer second.Close()
 
-		Eventually(func() []int32 {
+		Eventually(func() []string {
 			return subject.Claims()
-		}, "10s").Should(HaveLen(2))
+		}, "10s").Should(HaveLen(5))
 
-		off1, err := subject.Offset(1)
+		off1, err := subject.Offset(tTopicA, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off1).To(Equal(int64(38)))
 
-		off2, err := subject.Offset(2)
+		off2, err := subject.Offset(tTopicA, 2)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(off2).To(Equal(int64(36)))
 	})
@@ -198,7 +231,7 @@ var _ = Describe("Consumer", func() {
 			return entries
 		}, "30s", "1s").ShouldNot(BeEmpty())
 
-		truncated, err := NewConsumer(tKafkaAddrs, tZKAddrs, tGroupX, tTopicX, nil)
+		truncated, err := NewConsumer(tKafkaAddrs, tZKAddrs, tGroupX, []string{tTopicX}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer truncated.Close()
 

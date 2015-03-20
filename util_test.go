@@ -7,11 +7,19 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Claims", func() {
+var _ = Describe("claimsMap", func() {
 
-	It("should extract partition IDs", func() {
-		claims := Claims{5: nil, 2: nil, 1: nil}
-		Expect(claims.PartitionIDs()).To(Equal([]int32{1, 2, 5}))
+	It("should extract names", func() {
+		claims := claimsMap{
+			topicPartition{tTopicA, 5}: nil,
+			topicPartition{tTopicB, 2}: nil,
+			topicPartition{tTopicA, 1}: nil,
+		}
+		Expect(claims.Names()).To(Equal([]string{
+			"sarama-cluster-topic-a-1",
+			"sarama-cluster-topic-a-5",
+			"sarama-cluster-topic-b-2",
+		}))
 	})
 
 })
@@ -38,13 +46,4 @@ var _ = Describe("GUID", func() {
 		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix:testhost:4e44cb31-4e84-ffff-ffff"))
 		Expect(newGUIDAt("prefix", time.Unix(1313131313, 0))).To(Equal("prefix:testhost:4e44cb31-4e84-0000-0000"))
 	})
-})
-
-var _ = Describe("int32Slice", func() {
-
-	It("should sort", func() {
-		slice := int32Slice{5, 1, 2}
-		Expect(slice.Sorted()).To(Equal([]int32{1, 2, 5}))
-	})
-
 })

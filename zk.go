@@ -132,10 +132,15 @@ func (z *ZK) RegisterGroup(group string) error {
 }
 
 // RegisterConsumer registers a new consumer within a group
-func (z *ZK) RegisterConsumer(group, id, topic string) error {
+func (z *ZK) RegisterConsumer(group, id string, topics []string) error {
+	topicMap := make(map[string]int, len(topics))
+	for _, topic := range topics {
+		topicMap[topic] = 1
+	}
+
 	data, err := json.Marshal(&zkConsumerConfig{
 		Pattern:      "white_list",
-		Subscription: map[string]int{topic: 1},
+		Subscription: topicMap,
 		Timestamp:    strconv.FormatInt(time.Now().Unix(), 10),
 		Version:      1,
 	})

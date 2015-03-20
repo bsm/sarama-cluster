@@ -35,7 +35,8 @@ var _ = Describe("PartitionSlice", func() {
 // --------------------------------------------------------------------
 
 const (
-	tTopic  = "sarama-cluster-topic"
+	tTopicA = "sarama-cluster-topic-a"
+	tTopicB = "sarama-cluster-topic-b"
 	tTopicX = "sarama-cluster-topic-x"
 	tGroup  = "sarama-cluster-group"
 	tGroupX = "sarama-cluster-group-x"
@@ -90,32 +91,45 @@ var _ = BeforeSuite(func() {
 
 	// Ensure we can retrieve partition info
 	Eventually(func() error {
-		_, err := client.Partitions(tTopic)
+		_, err := client.Partitions(tTopicA)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 
-	// Create a special truncated topic with a small retention config
-	cmd := exec.Command(cli, "--zookeeper", "localhost:22181", "--create", "--topic", tTopicX, "--partitions", "1", "--replication-factor", "1", "--config", "segment.bytes=1024", "--config", "retention.bytes=4096")
+	// Create a special truncated topic B with 6 topics
+	cmd := exec.Command(cli, "--zookeeper", "localhost:22181", "--create", "--topic", tTopicB, "--partitions", "6", "--replication-factor", "1")
 	Expect(cmd.Run()).NotTo(HaveOccurred())
 
-	// Seed messages to primary topic
-	p1, err := sarama.NewAsyncProducerFromClient(client)
+	// Create a special truncated topic X with a small retention config
+	cmd = exec.Command(cli, "--zookeeper", "localhost:22181", "--create", "--topic", tTopicX, "--partitions", "1", "--replication-factor", "1", "--config", "segment.bytes=1024", "--config", "retention.bytes=4096")
+	Expect(cmd.Run()).NotTo(HaveOccurred())
+
+	// Seed messages to topic A
+	pA, err := sarama.NewAsyncProducerFromClient(client)
 	Expect(err).NotTo(HaveOccurred())
 	for i := 0; i < tN; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		p1.Input() <- &sarama.ProducerMessage{Topic: tTopic, Key: kv, Value: kv}
+		kv := sarama.StringEncoder(fmt.Sprintf("TOPIC-A-%08d", i))
+		pA.Input() <- &sarama.ProducerMessage{Topic: tTopicA, Key: kv, Value: kv}
 	}
-	Expect(p1.Close()).NotTo(HaveOccurred())
+	Expect(pA.Close()).NotTo(HaveOccurred())
 
-	// Seed messages to truncated topic
-	p2, err := sarama.NewSyncProducerFromClient(client)
+	// Seed messages to topic B
+	pB, err := sarama.NewAsyncProducerFromClient(client)
+	Expect(err).NotTo(HaveOccurred())
+	for i := 0; i < tN; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("TOPIC-B-%08d", i))
+		pB.Input() <- &sarama.ProducerMessage{Topic: tTopicB, Key: kv, Value: kv}
+	}
+	Expect(pB.Close()).NotTo(HaveOccurred())
+
+	// Seed messages to (truncated) topic X
+	pX, err := sarama.NewSyncProducerFromClient(client)
 	Expect(err).NotTo(HaveOccurred())
 	for i := 0; i < 100; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		_, _, err := p2.SendMessage(&sarama.ProducerMessage{Topic: tTopicX, Key: kv, Value: kv})
+		kv := sarama.StringEncoder(fmt.Sprintf("TOPIC-X-%08d", i))
+		_, _, err := pX.SendMessage(&sarama.ProducerMessage{Topic: tTopicX, Key: kv, Value: kv})
 		Expect(err).NotTo(HaveOccurred())
 	}
-	Expect(p2.Close()).NotTo(HaveOccurred())
+	Expect(pX.Close()).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
@@ -144,8 +158,11 @@ func TestSuite(t *testing.T) {
 
 var scenario struct{ kafka, zk *exec.Cmd }
 
-func newConsumer(conf *Config) (*Consumer, error) {
-	return NewConsumer(tKafkaAddrs, tZKAddrs, tGroup, tTopic, conf)
+func newConsumer(topics []string, conf *Config) (*Consumer, error) {
+	if topics == nil {
+		topics = []string{tTopicA, tTopicB}
+	}
+	return NewConsumer(tKafkaAddrs, tZKAddrs, tGroup, topics, conf)
 }
 
 func testDir(tokens ...string) string {

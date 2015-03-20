@@ -30,7 +30,7 @@ var _ = Describe("ZK", func() {
 	Describe("high-level API", func() {
 
 		var checkOwner = func(num string) string {
-			val, _, _ := subject.Get("/consumers/" + tGroup + "/owners/" + tTopic + "/" + num)
+			val, _, _ := subject.Get("/consumers/" + tGroup + "/owners/" + tTopicA + "/" + num)
 			return string(val)
 		}
 
@@ -76,11 +76,11 @@ var _ = Describe("ZK", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strs).To(BeEmpty())
 
-			err = subject.RegisterConsumer(tGroup, "consumer-b", "topic")
+			err = subject.RegisterConsumer(tGroup, "consumer-b", []string{"topic"})
 			Expect(err).NotTo(HaveOccurred())
-			err = other.RegisterConsumer(tGroup, "consumer-a", "topic")
+			err = other.RegisterConsumer(tGroup, "consumer-a", []string{"topic"})
 			Expect(err).NotTo(HaveOccurred())
-			err = subject.RegisterConsumer(tGroup, "consumer-b", "topic")
+			err = subject.RegisterConsumer(tGroup, "consumer-b", []string{"topic"})
 			Expect(err).To(Equal(zk.ErrNodeExists))
 			Expect((<-watch).Type).To(Equal(zk.EventNodeChildrenChanged))
 
@@ -101,53 +101,53 @@ var _ = Describe("ZK", func() {
 		})
 
 		It("should claim partitions (ephemeral)", func() {
-			Expect(subject.Claim(tGroup, tTopic, 0, "consumer-a")).To(BeNil())
+			Expect(subject.Claim(tGroup, tTopicA, 0, "consumer-a")).To(BeNil())
 			Expect(checkOwner("0")).To(Equal(`consumer-a`))
 		})
 
 		It("should wait with claim until available", func() {
-			Expect(subject.Claim(tGroup, tTopic, 1, "consumer-b")).To(BeNil())
+			Expect(subject.Claim(tGroup, tTopicA, 1, "consumer-b")).To(BeNil())
 			go func() {
-				subject.Claim(tGroup, tTopic, 1, "consumer-c")
+				subject.Claim(tGroup, tTopicA, 1, "consumer-c")
 			}()
 			Expect(checkOwner("1")).To(Equal(`consumer-b`))
-			Expect(subject.Release(tGroup, tTopic, 1, "consumer-b")).To(BeNil())
+			Expect(subject.Release(tGroup, tTopicA, 1, "consumer-b")).To(BeNil())
 			Eventually(func() string { return checkOwner("1") }).Should(Equal(`consumer-c`))
 		})
 
 		It("should release partitions", func() {
-			Expect(subject.Release(tGroup, tTopic, 0, "consumer-a")).To(BeNil())
+			Expect(subject.Release(tGroup, tTopicA, 0, "consumer-a")).To(BeNil())
 
-			Expect(subject.Claim(tGroup, tTopic, 0, "consumer-a")).To(BeNil())
-			Expect(subject.Release(tGroup, tTopic, 0, "consumer-a")).To(BeNil())
+			Expect(subject.Claim(tGroup, tTopicA, 0, "consumer-a")).To(BeNil())
+			Expect(subject.Release(tGroup, tTopicA, 0, "consumer-a")).To(BeNil())
 
-			Expect(subject.Claim(tGroup, tTopic, 0, "consumer-a")).To(BeNil())
-			Expect(subject.Release(tGroup, tTopic, 0, "consumer-b")).To(Equal(zk.ErrNotLocked))
+			Expect(subject.Claim(tGroup, tTopicA, 0, "consumer-a")).To(BeNil())
+			Expect(subject.Release(tGroup, tTopicA, 0, "consumer-b")).To(Equal(zk.ErrNotLocked))
 		})
 
 		It("should retrieve offsets", func() {
-			offset, err := subject.Offset(tGroup, tTopic, 0)
+			offset, err := subject.Offset(tGroup, tTopicA, 0)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(0)))
 
-			err = subject.Create("/consumers/"+tGroup+"/offsets/"+tTopic+"/0", []byte("14798"), false)
+			err = subject.Create("/consumers/"+tGroup+"/offsets/"+tTopicA+"/0", []byte("14798"), false)
 			Expect(err).NotTo(HaveOccurred())
 
-			offset, err = subject.Offset(tGroup, tTopic, 0)
+			offset, err = subject.Offset(tGroup, tTopicA, 0)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(14798)))
 		})
 
 		It("should commit offsets", func() {
-			Expect(subject.Commit(tGroup, tTopic, 0, 999)).To(BeNil())
+			Expect(subject.Commit(tGroup, tTopicA, 0, 999)).To(BeNil())
 
-			val, stat, err := subject.Get("/consumers/" + tGroup + "/offsets/" + tTopic + "/0")
+			val, stat, err := subject.Get("/consumers/" + tGroup + "/offsets/" + tTopicA + "/0")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(val)).To(Equal(`999`))
 			Expect(stat.Version).To(Equal(int32(0)))
 
-			Expect(subject.Commit(tGroup, tTopic, 0, 2999)).To(BeNil())
-			offset, err := subject.Offset(tGroup, tTopic, 0)
+			Expect(subject.Commit(tGroup, tTopicA, 0, 2999)).To(BeNil())
+			offset, err := subject.Offset(tGroup, tTopicA, 0)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(offset).To(Equal(int64(2999)))
 		})

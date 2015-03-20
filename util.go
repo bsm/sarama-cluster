@@ -10,17 +10,29 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-/* Claims map */
+/* topic/partition combo */
 
-type Claims map[int32]sarama.PartitionConsumer
+type topicPartition struct {
+	topic     string
+	partition int32
+}
 
-// PartitionIDs returns the associated partition IDs
-func (c Claims) PartitionIDs() []int32 {
-	ids := make(int32Slice, 0, len(c))
-	for id, _ := range c {
-		ids = append(ids, id)
+func (tp topicPartition) String() string {
+	return fmt.Sprintf("%s-%d", tp.topic, tp.partition)
+}
+
+/* claims map */
+
+type claimsMap map[topicPartition]sarama.PartitionConsumer
+
+// Names returns the claimed topic-partitions
+func (c claimsMap) Names() []string {
+	names := make([]string, 0, len(c))
+	for tp, _ := range c {
+		names = append(names, tp.String())
 	}
-	return ids.Sorted()
+	sort.Strings(names)
+	return names
 }
 
 /* GUID generator */
@@ -54,12 +66,3 @@ func newGUIDAt(prefix string, at time.Time) string {
 	ins := fmt.Sprintf("%08x", inc)
 	return fmt.Sprintf("%s:%s:%08x-%04x-%s-%s", prefix, cGUID.hostname, uts, cGUID.pid, ins[:4], ins[4:])
 }
-
-/* Sortable int32Slice */
-
-type int32Slice []int32
-
-func (s int32Slice) Len() int           { return len(s) }
-func (s int32Slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s int32Slice) Less(i, j int) bool { return s[i] < s[j] }
-func (s int32Slice) Sorted() []int32    { sort.Sort(s); return []int32(s) }
