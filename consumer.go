@@ -62,7 +62,7 @@ func (c *Config) normalize() *Config {
 	if c.CommitEvery < 10*time.Millisecond {
 		c.CommitEvery = 0
 	}
-	if c.DefaultOffsetMode != sarama.OffsetOldest && c.DefaultOffsetMode != sarama.OffsetOldest {
+	if !(c.DefaultOffsetMode == sarama.OffsetOldest || c.DefaultOffsetMode == sarama.OffsetNewest) {
 		c.DefaultOffsetMode = sarama.OffsetOldest
 	}
 	if c.ZKSessionTimeout == 0 {
