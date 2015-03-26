@@ -482,7 +482,7 @@ func (c *Consumer) claim(tp topicPartition) (sarama.PartitionConsumer, error) {
 	c.rLock.Lock()
 	last := c.read[tp]
 	c.rLock.Unlock()
-	if offset < last {
+	if offset < last && offset != sarama.OffsetOldest && offset != sarama.OffsetNewest {
 		offset = last
 	}
 
