@@ -465,6 +465,23 @@ func (c *Consumer) reset(claims claimsMap) (err error) {
 	return
 }
 
+// Returns latest (or default) offset
+func (c *Consumer) offset(tp topicPartition) (int64, error) {
+	offset, err := c.Offset(tp.topic, tp.partition)
+	if err != nil {
+		return 0, err
+	} else if offset < 1 {
+		offset = c.config.DefaultOffsetMode
+	}
+
+	c.rLock.Lock()
+	if last, ok := c.read[tp]; ok && offset < last {
+		offset = last
+	}
+	c.rLock.Unlock()
+	return offset, nil
+}
+
 // Claims a partition
 func (c *Consumer) claim(tp topicPartition) (sarama.PartitionConsumer, error) {
 	err := c.zoo.Claim(c.group, tp.topic, tp.partition, c.id)
@@ -472,20 +489,10 @@ func (c *Consumer) claim(tp topicPartition) (sarama.PartitionConsumer, error) {
 		return nil, err
 	}
 
-	offset, err := c.Offset(tp.topic, tp.partition)
+	offset, err := c.offset(tp)
 	if err != nil {
 		return nil, err
-	} else if offset < 1 {
-		offset = c.config.DefaultOffsetMode
 	}
-
-	c.rLock.Lock()
-	last := c.read[tp]
-	c.rLock.Unlock()
-	if offset < last {
-		offset = last
-	}
-
 	// fmt.Printf(">,%s,%s,%d\n", c.id, tp.String(), offset)
 	return c.consumer.ConsumePartition(tp.topic, tp.partition, offset)
 }
