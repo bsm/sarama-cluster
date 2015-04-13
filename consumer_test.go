@@ -27,6 +27,21 @@ var _ = Describe("Consumer", func() {
 		}
 	})
 
+	It("should normalize config", func() {
+		config := &Config{DefaultOffsetMode: sarama.OffsetNewest}
+		config.normalize()
+		Expect(config.DefaultOffsetMode).To(Equal(sarama.OffsetNewest))
+		config = &Config{DefaultOffsetMode: sarama.OffsetOldest}
+		config.normalize()
+		Expect(config.DefaultOffsetMode).To(Equal(sarama.OffsetOldest))
+		config = &Config{DefaultOffsetMode: -100, CommitEvery: time.Millisecond}
+		config.normalize()
+		Expect(config.DefaultOffsetMode).To(Equal(sarama.OffsetOldest))
+		Expect(config.Notifier).ToNot(BeNil())
+		Expect(config.CommitEvery).To(Equal(time.Duration(0)))
+		Expect(config.ZKSessionTimeout).To(Equal(time.Second))
+	})
+
 	It("can be created & closed", func() {
 		lst, _, err := subject.zoo.Consumers(tGroup)
 		Expect(err).NotTo(HaveOccurred())
