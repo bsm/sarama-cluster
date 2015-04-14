@@ -6,8 +6,8 @@ Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go clien
 
 ## Important
 
-The sarama API is unfortunately very unstable. We are trying to keep this library up-to-date with sarama's latest master
-and tag new releases with references to sarama's commit SHA1 they were tested against.
+The sarama API is unfortunately very unstable. We are trying to keep this library up-to-date with sarama's latest release
+and tag new releases accordingly.
 
 ## Documentation
 
