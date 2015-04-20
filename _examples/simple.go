@@ -14,11 +14,11 @@ func main() {
 	abortOn(err)
 	defer client.Close()
 
-	err = produce(&client, 10000)
+	err = produce(client, 10000)
 	abortOn(err)
 	log.Println("Produced 10000 messages.")
 
-	err = consume(&client, 1000, func(message *sarama.ConsumerMessage) {
+	err = consume(client, 1000, func(message *sarama.ConsumerMessage) {
 		fmt.Println(string(message.Value))
 	})
 	abortOn(err)
@@ -28,8 +28,8 @@ func main() {
 	select {}
 }
 
-func produce(client *sarama.Client, n int) error {
-	producer, err := sarama.NewSyncProducerFromClient(*client)
+func produce(client sarama.Client, n int) error {
+	producer, err := sarama.NewSyncProducerFromClient(client)
 	if err != nil {
 		return err
 	}
@@ -49,10 +49,10 @@ func produce(client *sarama.Client, n int) error {
 	return nil
 }
 
-func consume(client *sarama.Client, n int, cb func(*sarama.ConsumerMessage)) error {
+func consume(client sarama.Client, n int, cb func(*sarama.ConsumerMessage)) error {
 	// Connect consumer
 	config := cluster.Config{CommitEvery: time.Second}
-	consumer, err := cluster.NewConsumerFromClient(*client, []string{"localhost:2181"}, "my-group", []string{"my-topic"}, &config)
+	consumer, err := cluster.NewConsumerFromClient(client, []string{"localhost:2181"}, "my-group", []string{"my-topic"}, &config)
 	if err != nil {
 		return err
 	}
