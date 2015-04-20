@@ -28,7 +28,7 @@ func main() {
 	select {}
 }
 
-func produce(client *sarama.Client, n int) error {
+func produce(client sarama.Client, n int) error {
 	producer, err := sarama.NewSyncProducerFromClient(client)
 	if err != nil {
 		return err
@@ -37,17 +37,22 @@ func produce(client *sarama.Client, n int) error {
 
 	for i := 0; i < n; i++ {
 		kv := sarama.StringEncoder(fmt.Sprintf("MESSAGE-%08d", i))
-		if _, _, err := producer.SendMessage("my_topic", kv, kv); err != nil {
+		message := &sarama.ProducerMessage{
+			Topic: "my-topic",
+			Key:   kv,
+			Value: kv,
+		}
+		if _, _, err := producer.SendMessage(message); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func consume(client *sarama.Client, n int, cb func(*sarama.ConsumerMessage)) error {
+func consume(client sarama.Client, n int, cb func(*sarama.ConsumerMessage)) error {
 	// Connect consumer
 	config := cluster.Config{CommitEvery: time.Second}
-	consumer, err := cluster.NewConsumerFromClient(client, []string{"localhost:2181"}, "my-group", "my-topic", &config)
+	consumer, err := cluster.NewConsumerFromClient(client, []string{"localhost:2181"}, "my-group", []string{"my-topic"}, &config)
 	if err != nil {
 		return err
 	}
