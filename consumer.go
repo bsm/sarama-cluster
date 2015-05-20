@@ -229,7 +229,7 @@ func (c *Consumer) Offset(topic string, partitionID int32) (int64, error) {
 func (c *Consumer) Ack(msg *sarama.ConsumerMessage) {
 	tp := topicPartition{msg.Topic, msg.Partition}
 	c.aLock.Lock()
-	if msg.Offset > c.acked[tp] {
+	if msg.Offset >= c.acked[tp] {
 		c.acked[tp] = msg.Offset
 	}
 	c.aLock.Unlock()
