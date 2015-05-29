@@ -1,5 +1,5 @@
 SCALA_VERSION?= 2.11
-KAFKA_VERSION?= 0.8.2.0
+KAFKA_VERSION?= 0.8.2.1
 KAFKA_DIR= kafka_$(SCALA_VERSION)-$(KAFKA_VERSION)
 KAFKA_SRC= http://www.mirrorservice.org/sites/ftp.apache.org/kafka/$(KAFKA_VERSION)/$(KAFKA_DIR).tgz
 KAFKA_ROOT= _test/$(KAFKA_DIR)

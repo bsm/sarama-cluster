@@ -44,7 +44,7 @@ const (
 )
 
 var (
-	tKafkaDir   = "kafka_2.11-0.8.2.0"
+	tKafkaDir   = "kafka_2.11-0.8.2.1"
 	tKafkaAddrs = []string{"127.0.0.1:29092"}
 	tZKAddrs    = []string{"127.0.0.1:22181"}
 	tN          = 100000
