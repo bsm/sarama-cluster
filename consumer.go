@@ -104,7 +104,7 @@ type Consumer struct {
 //
 // IMPORTANT: multiple consumers instances sharing the same group name must always subscribe to the
 // same topics as their siblings to ensure all partitions are correctly assigned/distributed.
-func NewConsumer(addrs, zookeepers []string, group string, topics []string, config *Config) (*Consumer, error) {
+func NewConsumer(addrs []string, zookeeper string, group string, topics []string, config *Config) (*Consumer, error) {
 	config = config.normalize()
 
 	client, err := sarama.NewClient(addrs, config.Config)
@@ -112,7 +112,7 @@ func NewConsumer(addrs, zookeepers []string, group string, topics []string, conf
 		return nil, err
 	}
 
-	c, err := NewConsumerFromClient(client, zookeepers, group, topics, config)
+	c, err := NewConsumerFromClient(client, zookeeper, group, topics, config)
 	if err != nil {
 		client.Close()
 		return nil, err
@@ -123,7 +123,7 @@ func NewConsumer(addrs, zookeepers []string, group string, topics []string, conf
 
 // NewConsumerFromClient creates a new consumer for a given list of topics, reusing an existing client
 // See NewConsumer function documentation for more details.
-func NewConsumerFromClient(client sarama.Client, zookeepers []string, group string, topics []string, config *Config) (*Consumer, error) {
+func NewConsumerFromClient(client sarama.Client, zookeeper string, group string, topics []string, config *Config) (*Consumer, error) {
 	config = config.normalize()
 
 	// Always propagate errors to cluster consumer, but retain the original setting
@@ -156,7 +156,7 @@ func NewConsumerFromClient(client sarama.Client, zookeepers []string, group stri
 	}
 
 	// Connect to zookeeper
-	zoo, err := NewZK(zookeepers, config.ZKSessionTimeout)
+	zoo, err := NewZK(zookeeper, config.ZKSessionTimeout)
 	if err != nil {
 		scsmr.Close()
 		return nil, err
@@ -386,7 +386,7 @@ func (c *Consumer) shutdown(claims claimsMap) error {
 func (c *Consumer) closeAll() {
 	close(c.messages)
 	close(c.errors)
-	c.zoo.Close()
+	c.zoo.conn.Close()
 	c.consumer.Close()
 	if c.ownClient {
 		c.client.Close()
