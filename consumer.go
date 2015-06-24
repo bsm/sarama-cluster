@@ -386,7 +386,7 @@ func (c *Consumer) shutdown(claims claimsMap) error {
 func (c *Consumer) closeAll() {
 	close(c.messages)
 	close(c.errors)
-	c.zoo.conn.Close()
+	c.zoo.Close()
 	c.consumer.Close()
 	if c.ownClient {
 		c.client.Close()
