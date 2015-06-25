@@ -5,13 +5,16 @@ import (
 	"path"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
 )
 
-// ZK wraps a zookeeper connection
-type ZK struct{ *zk.Conn }
+type ZK struct {
+	*zk.Conn
+	chroot string
+}
 
 type zkConsumerConfig struct {
 	Pattern      string         `json:"pattern,omitempty"`
@@ -20,13 +23,21 @@ type zkConsumerConfig struct {
 	Version      int            `json:"version,omitempty"`
 }
 
-// NewZK creates a new connection instance
-func NewZK(servers []string, recvTimeout time.Duration) (*ZK, error) {
+func NewZK(cs string, recvTimeout time.Duration) (*ZK, error) {
+	chroot := ""
+	if i := strings.Index(cs, "/"); i != -1 {
+		chroot = cs[i:len(cs)]
+		cs = cs[0:i]
+	}
+
+	servers := strings.Split(cs, ",")
+
 	conn, _, err := zk.Connect(servers, recvTimeout)
 	if err != nil {
 		return nil, err
 	}
-	return &ZK{conn}, nil
+
+	return &ZK{conn, chroot}, nil
 }
 
 /*******************************************************************
@@ -35,7 +46,7 @@ func NewZK(servers []string, recvTimeout time.Duration) (*ZK, error) {
 
 // Consumers returns all active consumers within a group
 func (z *ZK) Consumers(group string) ([]string, <-chan zk.Event, error) {
-	root := "/consumers/" + group + "/ids"
+	root := strings.Join([]string{z.chroot, "consumers", group, "ids"}, "/")
 	err := z.MkdirAll(root)
 	if err != nil {
 		return nil, nil, err
@@ -51,7 +62,7 @@ func (z *ZK) Consumers(group string) ([]string, <-chan zk.Event, error) {
 
 // Claim claims a topic/partition ownership for a consumer ID within a group
 func (z *ZK) Claim(group, topic string, partitionID int32, id string) (err error) {
-	root := "/consumers/" + group + "/owners/" + topic
+	root := strings.Join([]string{z.chroot, "consumers", group, "owners", topic}, "/")
 	if err = z.MkdirAll(root); err != nil {
 		return err
 	}
@@ -76,7 +87,7 @@ func (z *ZK) Claim(group, topic string, partitionID int32, id string) (err error
 
 // Release releases a claim
 func (z *ZK) Release(group, topic string, partitionID int32, id string) error {
-	node := "/consumers/" + group + "/owners/" + topic + "/" + strconv.Itoa(int(partitionID))
+	node := strings.Join([]string{z.chroot, "consumers", group, "owners", topic, strconv.Itoa(int(partitionID))}, "/")
 	val, _, err := z.Get(node)
 
 	// Already deleted
@@ -94,7 +105,7 @@ func (z *ZK) Release(group, topic string, partitionID int32, id string) error {
 
 // Commit commits an offset to a group/topic/partition
 func (z *ZK) Commit(group, topic string, partitionID int32, offset int64) (err error) {
-	root := "/consumers/" + group + "/offsets/" + topic
+	root := strings.Join([]string{z.chroot, "consumers", group, "offsets", topic}, "/")
 	if err = z.MkdirAll(root); err != nil {
 		return err
 	}
@@ -116,7 +127,7 @@ func (z *ZK) Commit(group, topic string, partitionID int32, offset int64) (err e
 
 // Offset retrieves an offset to a group/topic/partition
 func (z *ZK) Offset(group, topic string, partitionID int32) (int64, error) {
-	node := "/consumers/" + group + "/offsets/" + topic + "/" + strconv.Itoa(int(partitionID))
+	node := strings.Join([]string{z.chroot, "consumers", group, "offsets", topic}, strconv.Itoa(int(partitionID)))
 	val, _, err := z.Get(node)
 	if err == zk.ErrNoNode {
 		return 0, nil
@@ -128,7 +139,8 @@ func (z *ZK) Offset(group, topic string, partitionID int32) (int64, error) {
 
 // RegisterGroup creates/updates a group directory
 func (z *ZK) RegisterGroup(group string) error {
-	return z.MkdirAll("/consumers/" + group + "/ids")
+	node := strings.Join([]string{z.chroot, "consumers", group, "ids"}, "/")
+	return z.MkdirAll(node)
 }
 
 // RegisterConsumer registers a new consumer within a group
@@ -148,12 +160,14 @@ func (z *ZK) RegisterConsumer(group, id string, topics []string) error {
 		return err
 	}
 
-	return z.Create("/consumers/"+group+"/ids/"+id, data, true)
+	node := strings.Join([]string{z.chroot, "consumers", group, "ids", id}, "/")
+	return z.Create(node, data, true)
 }
 
 // DeleteConsumer deletes the consumer from registry
 func (z *ZK) DeleteConsumer(group, id string) error {
-	return z.Delete("/consumers/"+group+"/ids/"+id, 0)
+	node := strings.Join([]string{z.chroot, "consumers", group, "ids", id}, "/")
+	return z.Delete(node, 0)
 }
 
 /*******************************************************************
