@@ -45,6 +45,10 @@ type Config struct {
 	// Default: 1s
 	ZKSessionTimeout time.Duration
 
+	// ZKDialer is the dialer used when connecting to zookeeper.
+	// Default: net.DialTimeout
+	ZKDialer zk.Dialer
+
 	customID     string
 	returnErrors bool
 }
@@ -156,7 +160,7 @@ func NewConsumerFromClient(client sarama.Client, zookeepers []string, group stri
 	}
 
 	// Connect to zookeeper
-	zoo, err := NewZK(zookeepers, config.ZKSessionTimeout)
+	zoo, err := NewZKWithDialer(zookeepers, config.ZKSessionTimeout, config.ZKDialer)
 	if err != nil {
 		scsmr.Close()
 		return nil, err

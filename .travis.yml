@@ -1,13 +1,15 @@
 language: go
 go:
+  - 1.5
   - 1.4
   - 1.3
 install:
   - go get -u github.com/Shopify/sarama
-  - (cd $HOME/gopath/src/github.com/Shopify/sarama && git fetch origin && git reset --hard v1.4.2)
+  - (cd $HOME/gopath/src/github.com/Shopify/sarama && git fetch origin && git reset --hard v1.4.3)
   - go get -t ./...
 env:
   - SCALA_VERSION=2.11 KAFKA_VERSION=0.8.2.1
   - SCALA_VERSION=2.10 KAFKA_VERSION=0.8.1.1
 script:
   - make testfull
+sudo: false

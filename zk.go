@@ -22,7 +22,12 @@ type zkConsumerConfig struct {
 
 // NewZK creates a new connection instance
 func NewZK(servers []string, recvTimeout time.Duration) (*ZK, error) {
-	conn, _, err := zk.Connect(servers, recvTimeout)
+	return NewZKWithDialer(servers, recvTimeout, nil)
+}
+
+// NewZKWithDialer creates a new connection instance using the supplied dialer.
+func NewZKWithDialer(servers []string, recvTimeout time.Duration, dialer zk.Dialer) (*ZK, error) {
+	conn, _, err := zk.ConnectWithDialer(servers, recvTimeout, dialer)
 	if err != nil {
 		return nil, err
 	}
