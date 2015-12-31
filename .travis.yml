@@ -1,11 +1,11 @@
 language: go
 go:
+  - 1.5
   - 1.4
-  - 1.3
 install:
   - go get -t ./...
+  - go get golang.org/x/tools/cmd/vet github.com/kisielk/errcheck
 env:
-  - SCALA_VERSION=2.11 KAFKA_VERSION=0.8.2.0
-  - SCALA_VERSION=2.10 KAFKA_VERSION=0.8.1.1
+  - SCALA_VERSION=2.11 KAFKA_VERSION=0.9.0.0
 script:
-  - make testfull
+  - make default testrace

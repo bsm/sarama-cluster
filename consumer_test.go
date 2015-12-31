@@ -1,210 +1,111 @@
 package cluster
 
 import (
-	"path/filepath"
-	"testing"
-	"time"
+	"fmt"
 
-	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Consumer", func() {
-	var subject *Consumer
 
-	BeforeEach(func() {
-		var err error
+	var newConsumer = func(group string) (*Consumer, error) {
+		return NewConsumer(testKafkaAddrs, group, testTopics, nil)
+	}
 
-		subject, err = newConsumer(nil)
-		Expect(err).NotTo(HaveOccurred())
-	})
+	var consume = func(consumerID, group string, max int, out chan *testConsumerMessage) {
+		go func() {
+			defer GinkgoRecover()
 
-	AfterEach(func() {
-		if subject != nil {
-			subject.Close()
-			subject = nil
-		}
-	})
+			cs, err := newConsumer(group)
+			Expect(err).NotTo(HaveOccurred())
+			defer cs.Close()
+			cs.consumerID = consumerID
 
-	It("can be created & closed", func() {
-		lst, _, err := subject.zoo.Consumers(tGroup)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(lst).To(HaveLen(1))
-		Expect(subject.Close()).NotTo(HaveOccurred())
-		subject = nil
-	})
+			for msg := range cs.Messages() {
+				out <- &testConsumerMessage{*msg, consumerID}
+				cs.MarkOffset(msg, "")
 
-	It("should claim partitions", func() {
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1, 2, 3}))
-	})
-
-	It("should notify subscribed listener", func() {
-		notifier := &mockNotifier{messages: make([]string, 0)}
-		consumer, err := newConsumer(&Config{Notifier: notifier})
-		Expect(err).NotTo(HaveOccurred())
-		defer consumer.Close()
-
-		Eventually(func() []string {
-			return notifier.Messages()
-		}, "5s").Should(HaveLen(2))
-	})
-
-	It("should release partitions & rebalance when new consumers join", func() {
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1, 2, 3}))
-
-		second, err := newConsumer(nil)
-		Expect(err).NotTo(HaveOccurred())
-		defer second.Close()
-
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0, 1}))
-		Eventually(func() []int32 {
-			return second.Claims()
-		}, "5s").Should(ConsistOf([]int32{2, 3}))
-
-		third, err := newConsumer(nil)
-		Expect(err).NotTo(HaveOccurred())
-		defer third.Close()
-
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "5s").Should(ConsistOf([]int32{0}))
-		Eventually(func() []int32 {
-			return second.Claims()
-		}, "5s").Should(ConsistOf([]int32{1, 2}))
-		Eventually(func() []int32 {
-			return third.Claims()
-		}, "5s").Should(ConsistOf([]int32{3}))
-	})
-
-	It("should process messages", func() {
-		res := make(map[int32]int)
-		cnt := 0
-		for evt := range subject.Messages() {
-			if cnt++; cnt > 4000 {
-				break
+				if max--; max == 0 {
+					return
+				}
 			}
-			res[evt.Partition]++
+		}()
+	}
+
+	It("should init and share", func() {
+		cs1, err := newConsumer(testGroup)
+		Expect(err).NotTo(HaveOccurred())
+		defer cs1.Close()
+
+		Eventually(func() map[string][]int32 {
+			return cs1.Subscriptions()
+		}, "10s", "100ms").Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3},
+			"topic-b": {0, 1, 2, 3},
+		}))
+
+		cs2, err := newConsumer(testGroup)
+		Expect(err).NotTo(HaveOccurred())
+		defer cs2.Close()
+
+		Eventually(func() map[string][]int32 {
+			return cs2.Subscriptions()
+		}, "10s", "100ms").Should(HaveLen(2))
+
+		Eventually(func() map[string][]int32 {
+			return cs1.Subscriptions()
+		}).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
+		Eventually(func() map[string][]int32 {
+			return cs1.Subscriptions()
+		}).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+		Eventually(func() map[string][]int32 {
+			return cs2.Subscriptions()
+		}).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
+		Eventually(func() map[string][]int32 {
+			return cs2.Subscriptions()
+		}).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+	})
+
+	It("should consume/commit/resume", func() {
+		acc := make(chan *testConsumerMessage, 150000)
+		consume("A", "fuzzing", 2000, acc)
+		consume("B", "fuzzing", 2000, acc)
+		consume("C", "fuzzing", 1000, acc)
+		consume("D", "fuzzing", 100, acc)
+		consume("E", "fuzzing", 200, acc)
+
+		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 5000))
+
+		consume("F", "fuzzing", 300, acc)
+		consume("G", "fuzzing", 400, acc)
+		consume("H", "fuzzing", 1000, acc)
+		consume("I", "fuzzing", 2000, acc)
+		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 8000))
+
+		consume("J", "fuzzing", 1000, acc)
+		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 9000))
+
+		consume("K", "fuzzing", 1000, acc)
+		consume("L", "fuzzing", 3000, acc)
+		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 12000))
+
+		consume("M", "fuzzing", 1000, acc)
+		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 15000))
+
+		close(acc)
+
+		uniques := make(map[string][]string)
+		for msg := range acc {
+			key := fmt.Sprintf("%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
+			uniques[key] = append(uniques[key], msg.ConsumerID)
 		}
-		Expect(res).To(HaveLen(4))
-	})
-
-	It("should auto-ack if requested", func() {
-		consumer, err := newConsumer(&Config{AutoAck: true})
-		Expect(err).NotTo(HaveOccurred())
-		defer consumer.Close()
-
-		cnt := 0
-		for _ = range consumer.Messages() {
-			if cnt++; cnt > 10 {
-				break
-			}
-		}
-		Eventually(func() map[int32]int64 {
-			return consumer.resetAcked()
-		}).ShouldNot(BeEmpty())
-	})
-
-	It("should auto-commit if requested", func() {
-		consumer, err := newConsumer(&Config{AutoAck: true, CommitEvery: 10 * time.Millisecond})
-		Expect(err).NotTo(HaveOccurred())
-		defer consumer.Close()
-
-		cnt := 0
-		for _ = range consumer.Messages() {
-			if cnt++; cnt > 99 {
-				break
-			}
-		}
-		Eventually(func() int64 {
-			n1, _ := consumer.Offset(0)
-			n2, _ := consumer.Offset(1)
-			n3, _ := consumer.Offset(2)
-			n4, _ := consumer.Offset(3)
-			return n1 + n2 + n3 + n4
-		}).Should(Equal(int64(100)))
-	})
-
-	It("should ack processed messages", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 17})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 15})
-		Expect(subject.Commit()).NotTo(HaveOccurred())
-
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 0})
-		Expect(subject.Commit()).NotTo(HaveOccurred())
-
-		off1, err := subject.Offset(1)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off1).To(Equal(int64(18)))
-
-		off2, err := subject.Offset(2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off2).To(Equal(int64(16)))
-	})
-
-	It("should allow to commit manually/periodically", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 27})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 25})
-		Expect(subject.Commit()).NotTo(HaveOccurred())
-		Expect(subject.Commit()).NotTo(HaveOccurred())
-
-		off1, err := subject.Offset(1)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off1).To(Equal(int64(28)))
-
-		off2, err := subject.Offset(2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off2).To(Equal(int64(26)))
-
-		off3, err := subject.Offset(3)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off3).To(Equal(int64(0)))
-	})
-
-	It("should auto-commit on close/rebalance", func() {
-		subject.Ack(&sarama.ConsumerMessage{Partition: 1, Offset: 37})
-		subject.Ack(&sarama.ConsumerMessage{Partition: 2, Offset: 35})
-
-		second, err := newConsumer(nil)
-		Expect(err).NotTo(HaveOccurred())
-		defer second.Close()
-
-		Eventually(func() []int32 {
-			return subject.Claims()
-		}, "10s").Should(HaveLen(2))
-
-		off1, err := subject.Offset(1)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off1).To(Equal(int64(38)))
-
-		off2, err := subject.Offset(2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(off2).To(Equal(int64(36)))
-	})
-
-	It("should gracefully recover from offset-out-range errors", func() {
-		if testing.Short() {
-			return
-		}
-
-		Eventually(func() []string {
-			entries, _ := filepath.Glob("/tmp/sarama-cluster-test/kafka/sarama-cluster-topic-x-0/*.deleted")
-			return entries
-		}, "30s", "1s").ShouldNot(BeEmpty())
-
-		truncated, err := NewConsumer(tKafkaAddrs, tZKAddrs, tGroupX, tTopicX, nil)
-		Expect(err).NotTo(HaveOccurred())
-		defer truncated.Close()
-
-		var msg *sarama.ConsumerMessage
-		Eventually(truncated.Messages(), "5s").Should(Receive(&msg))
-		Expect(msg.Offset).To(BeNumerically(">", 0))
+		Expect(uniques).To(HaveLen(15000))
 	})
 
 })

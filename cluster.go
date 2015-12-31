@@ -1,37 +1,38 @@
 package cluster
 
-import (
-	"io/ioutil"
-	"log"
+// Strategy for partition to consumer assignement
+type Strategy string
+
+const (
+	// StrategyRange is the default and assigns partition ranges to consumers.
+	// Example with six partitions and two consumers:
+	//   C1: [0, 1, 2]
+	//   C2: [3, 4, 5]
+	StrategyRange Strategy = "range"
+
+	// StrategyRoundRobin assigns partitions by alternating over consumers.
+	// Example with six partitions and two consumers:
+	//   C1: [0, 2, 4]
+	//   C2: [1, 3, 5]
+	StrategyRoundRobin Strategy = "roundrobin"
 )
 
-// Standard logger, set to ioutil.Discard by default
-var Logger = log.New(ioutil.Discard, "[sarama/cluster]", log.LstdFlags)
+// --------------------------------------------------------------------
 
-// Notifier is an abstract event notification handler
-// By default, sarama/cluster uses the LogNotifier which logs events to standard logger
-type Notifier interface {
-	RebalanceStart(*Consumer)
-	RebalanceOK(*Consumer)
-	RebalanceError(*Consumer, error)
-	CommitError(*Consumer, error)
+type none struct{}
+
+type topicPartition struct {
+	Topic     string
+	Partition int32
 }
 
-// LogNotifier is the standard log notifier, uses a Logger as the backend
-type LogNotifier struct{ *log.Logger }
-
-func (n *LogNotifier) RebalanceStart(c *Consumer) {
-	n.Printf("rebalancing %s", c.Group())
+type offsetInfo struct {
+	Offset   int64
+	Metadata string
 }
 
-func (n *LogNotifier) RebalanceOK(c *Consumer) {
-	n.Printf("rebalanced %s, claimed: %v", c.Group(), c.Claims())
-}
+type int32Slice []int32
 
-func (n *LogNotifier) RebalanceError(c *Consumer, err error) {
-	n.Printf("rebalancing %s failed: %s", c.Group(), err.Error())
-}
-
-func (n *LogNotifier) CommitError(c *Consumer, err error) {
-	n.Printf("committing %s failed: %s", c.Group(), err.Error())
-}
+func (p int32Slice) Len() int           { return len(p) }
+func (p int32Slice) Less(i, j int) bool { return p[i] < p[j] }
+func (p int32Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }

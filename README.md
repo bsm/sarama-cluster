@@ -2,12 +2,11 @@
 
 [![Build Status](https://travis-ci.org/bsm/sarama-cluster.png)](https://travis-ci.org/bsm/sarama-cluster)
 
-Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go client library for Apache Kafka 0.8 (and later).
+Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go client library for Apache Kafka 0.9 (and later).
 
-## Important
+## Warning
 
-The sarama API is unfortunately very unstable. We are trying to keep this library up-to-date with sarama's latest master
-and tag new releases with references to sarama's commit SHA1 they were tested against.
+Sarama still lacks full support for Kafka 0.9 API. Sarama cluster will be based on a [patched snapshot](https://github.com/dim/sarama) until the relevant [pull request](https://github.com/Shopify/sarama/pull/588) is merged.
 
 ## Documentation
 

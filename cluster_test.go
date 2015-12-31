@@ -5,185 +5,158 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/dim/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("PartitionSlice", func() {
-
-	It("should sort correctly", func() {
-		p1 := Partition{Addr: "host1:9093", ID: 1}
-		p2 := Partition{Addr: "host1:9092", ID: 2}
-		p3 := Partition{Addr: "host2:9092", ID: 3}
-		p4 := Partition{Addr: "host3:9091", ID: 4}
-		p5 := Partition{Addr: "host2:9093", ID: 5}
-		p6 := Partition{Addr: "host1:9092", ID: 6}
-
-		slice := PartitionSlice{p1, p2, p3, p4, p5, p6}
-		sort.Sort(slice)
-		Expect(slice).To(BeEquivalentTo(PartitionSlice{p2, p6, p1, p3, p5, p4}))
-	})
-
-})
-
-// --------------------------------------------------------------------
-
 const (
-	tTopic  = "sarama-cluster-topic"
-	tTopicX = "sarama-cluster-topic-x"
-	tGroup  = "sarama-cluster-group"
-	tGroupX = "sarama-cluster-group-x"
-	tDir    = "/tmp/sarama-cluster-test"
+	testGroup     = "sarama-cluster-group"
+	testKafkaData = "/tmp/sarama-cluster-test"
 )
 
 var (
-	tKafkaDir   = "kafka_2.11-0.8.2.0"
-	tKafkaAddrs = []string{"127.0.0.1:29092"}
-	tZKAddrs    = []string{"127.0.0.1:22181"}
-	tN          = 100000
+	testKafkaRoot  = "kafka_2.11-0.9.0.0"
+	testKafkaAddrs = []string{"127.0.0.1:29092"}
+	testTopics     = []string{"topic-a", "topic-b"}
+
+	testClient              sarama.Client
+	testKafkaCmd, testZkCmd *exec.Cmd
 )
 
 func init() {
 	if dir := os.Getenv("KAFKA_DIR"); dir != "" {
-		tKafkaDir = dir
-	}
-	if testing.Short() {
-		tN = 10000
+		testKafkaRoot = dir
 	}
 }
 
 // --------------------------------------------------------------------
 
 var _ = BeforeSuite(func() {
-	run := testDir(tKafkaDir, "bin", "kafka-run-class.sh")
-	cli := testDir(tKafkaDir, "bin", "kafka-topics.sh")
-	scenario.zk = exec.Command(run, "-name", "zookeeper", "org.apache.zookeeper.server.ZooKeeperServerMain", testDir("zookeeper.properties"))
-	// scenario.zk.Stderr = os.Stderr
-	// scenario.zk.Stdout = os.Stdout
+	testZkCmd = exec.Command(
+		testDataDir(testKafkaRoot, "bin", "kafka-run-class.sh"),
+		"org.apache.zookeeper.server.quorum.QuorumPeerMain",
+		testDataDir("zookeeper.properties"),
+	)
+	testZkCmd.Env = []string{"KAFKA_HEAP_OPTS=-Xmx512M -Xms512M"}
+	// testZkCmd.Stderr = os.Stderr
+	// testZkCmd.Stdout = os.Stdout
 
-	scenario.kafka = exec.Command(run, "-name", "kafkaServer", "kafka.Kafka", testDir("server.properties"))
-	scenario.kafka.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
-	// scenario.kafka.Stderr = os.Stderr
-	// scenario.kafka.Stdout = os.Stdout
+	testKafkaCmd = exec.Command(
+		testDataDir(testKafkaRoot, "bin", "kafka-run-class.sh"),
+		"-name", "kafkaServer", "kafka.Kafka",
+		testDataDir("server.properties"),
+	)
+	testKafkaCmd.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
+	// testKafkaCmd.Stderr = os.Stderr
+	// testKafkaCmd.Stdout = os.Stdout
 
-	// Create Dir
-	Expect(os.MkdirAll(tDir, 0775)).NotTo(HaveOccurred())
-
-	// Start ZK & Kafka
-	Expect(scenario.zk.Start()).NotTo(HaveOccurred())
-	Expect(scenario.kafka.Start()).NotTo(HaveOccurred())
+	Expect(os.MkdirAll(testKafkaData, 0777)).NotTo(HaveOccurred())
+	Expect(testZkCmd.Start()).NotTo(HaveOccurred())
+	Expect(testKafkaCmd.Start()).NotTo(HaveOccurred())
 
 	// Wait for client
-	var client sarama.Client
 	Eventually(func() error {
 		var err error
-		client, err = sarama.NewClient(tKafkaAddrs, nil)
+
+		testClient, err = sarama.NewClient(testKafkaAddrs, nil)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
-	defer client.Close()
 
 	// Ensure we can retrieve partition info
 	Eventually(func() error {
-		_, err := client.Partitions(tTopic)
+		_, err := testClient.Partitions(testTopics[0])
 		return err
-	}, "10s", "1s").ShouldNot(HaveOccurred())
+	}, "10s", "500ms").ShouldNot(HaveOccurred())
 
-	// Create a special truncated topic with a small retention config
-	cmd := exec.Command(cli, "--zookeeper", "localhost:22181", "--create", "--topic", tTopicX, "--partitions", "1", "--replication-factor", "1", "--config", "segment.bytes=1024", "--config", "retention.bytes=4096")
-	Expect(cmd.Run()).NotTo(HaveOccurred())
-
-	// Seed messages to primary topic
-	p1, err := sarama.NewAsyncProducerFromClient(client)
-	Expect(err).NotTo(HaveOccurred())
-	for i := 0; i < tN; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		p1.Input() <- &sarama.ProducerMessage{Topic: tTopic, Key: kv, Value: kv}
-	}
-	Expect(p1.Close()).NotTo(HaveOccurred())
-
-	// Seed messages to truncated topic
-	p2, err := sarama.NewSyncProducerFromClient(client)
-	Expect(err).NotTo(HaveOccurred())
-	for i := 0; i < 100; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		_, _, err := p2.SendMessage(&sarama.ProducerMessage{Topic: tTopicX, Key: kv, Value: kv})
-		Expect(err).NotTo(HaveOccurred())
-	}
-	Expect(p2.Close()).NotTo(HaveOccurred())
+	// Seed a few messages
+	Expect(testSeed(1000)).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
-	if scenario.kafka != nil {
-		scenario.kafka.Process.Kill()
-	}
-	if scenario.zk != nil {
-		scenario.zk.Process.Kill()
-	}
-	Expect(os.RemoveAll(tDir)).NotTo(HaveOccurred())
+	_ = testClient.Close()
+
+	_ = testKafkaCmd.Process.Kill()
+	_ = testZkCmd.Process.Kill()
+	_ = testKafkaCmd.Wait()
+	_ = testZkCmd.Wait()
+	_ = os.RemoveAll(testKafkaData)
 })
+
+// --------------------------------------------------------------------
 
 func TestSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	AfterEach(func() {
-		zk, err := NewZK(tZKAddrs, time.Second)
-		Expect(err).NotTo(HaveOccurred())
-
-		zk.DeleteAll("/consumers/" + tGroup)
-		zk.Close()
-	})
 	RunSpecs(t, "sarama/cluster")
 }
 
-// --------------------------------------------------------------------
-
-var scenario struct{ kafka, zk *exec.Cmd }
-
-func newConsumer(conf *Config) (*Consumer, error) {
-	return NewConsumer(tKafkaAddrs, tZKAddrs, tGroup, tTopic, conf)
-}
-
-func testDir(tokens ...string) string {
-	tokens = append([]string{"_test"}, tokens...)
+func testDataDir(tokens ...string) string {
+	tokens = append([]string{"testdata"}, tokens...)
 	return filepath.Join(tokens...)
 }
 
+// Seed messages
+func testSeed(n int) error {
+	producer, err := sarama.NewSyncProducerFromClient(testClient)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < n; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		for _, t := range testTopics {
+			msg := &sarama.ProducerMessage{Topic: t, Key: kv, Value: kv}
+			if _, _, err := producer.SendMessage(msg); err != nil {
+				return err
+			}
+		}
+	}
+	return producer.Close()
+}
+
+type testConsumerMessage struct {
+	sarama.ConsumerMessage
+	ConsumerID string
+}
+
 // --------------------------------------------------------------------
 
-type mockNotifier struct {
-	lock     sync.Mutex
-	messages []string
+var _ sarama.Consumer = &mockConsumer{}
+var _ sarama.PartitionConsumer = &mockPartitionConsumer{}
+
+type mockClient struct {
+	sarama.Client
+
+	topics map[string][]int32
+}
+type mockConsumer struct{ sarama.Consumer }
+type mockPartitionConsumer struct {
+	sarama.PartitionConsumer
+
+	Topic     string
+	Partition int32
+	Offset    int64
 }
 
-func (n *mockNotifier) RebalanceStart(c *Consumer) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	n.messages = append(n.messages, "REBALANCE START")
+func (m *mockClient) Partitions(t string) ([]int32, error) {
+	pts, ok := m.topics[t]
+	if !ok {
+		return nil, sarama.ErrInvalidTopic
+	}
+	return pts, nil
 }
-func (n *mockNotifier) RebalanceOK(c *Consumer) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	n.messages = append(n.messages, "REBALANCE OK")
+
+func (*mockConsumer) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
+	if offset > -1 && offset < 1000 {
+		return nil, sarama.ErrOffsetOutOfRange
+	}
+	return &mockPartitionConsumer{
+		Topic:     topic,
+		Partition: partition,
+		Offset:    offset,
+	}, nil
 }
-func (n *mockNotifier) RebalanceError(c *Consumer, err error) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	n.messages = append(n.messages, "REBALANCE ERROR")
-}
-func (n *mockNotifier) CommitError(c *Consumer, err error) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	n.messages = append(n.messages, "COMMIT ERROR")
-}
-func (n *mockNotifier) Messages() []string {
-	n.lock.Lock()
-	defer n.lock.Unlock()
-	msgs := make([]string, len(n.messages))
-	copy(msgs, n.messages)
-	return msgs
-}
+
+func (*mockPartitionConsumer) Close() error { return nil }

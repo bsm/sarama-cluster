@@ -1,31 +1,29 @@
 SCALA_VERSION?= 2.11
-KAFKA_VERSION?= 0.8.2.0
+KAFKA_VERSION?= 0.9.0.0
 KAFKA_DIR= kafka_$(SCALA_VERSION)-$(KAFKA_VERSION)
 KAFKA_SRC= http://www.mirrorservice.org/sites/ftp.apache.org/kafka/$(KAFKA_VERSION)/$(KAFKA_DIR).tgz
-KAFKA_ROOT= _test/$(KAFKA_DIR)
+KAFKA_ROOT= testdata/$(KAFKA_DIR)
 
-default: test
+default: vet errcheck test
+
+vet:
+	go vet ./...
+
+errcheck:
+	errcheck -ignoretests ./...
 
 test: testdeps
 	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60
 
-testfull: testdeps
-	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60
-	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60 -cpu=2
-	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60 -short -race
+testrace: testdeps
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60 -v -race
 
 testdeps: $(KAFKA_ROOT)
 
-.PHONY: test testfull testdeps
+.PHONY: test testdeps vet errcheck
 
 # ---------------------------------------------------------------------
 
 $(KAFKA_ROOT):
 	@mkdir -p $(dir $@)
 	cd $(dir $@) && curl $(KAFKA_SRC) | tar xz
-
-start_zookeeper:
-	$(KAFKA_ROOT)/bin/kafka-run-class.sh -name zookeeper org.apache.zookeeper.server.ZooKeeperServerMain _test/zookeeper.properties
-
-start_kafka:
-	KAFKA_HEAP_OPTS='-Xmx1G -Xms1G' $(KAFKA_ROOT)/bin/kafka-run-class.sh -name kafkaServer kafka.Kafka _test/server.properties
