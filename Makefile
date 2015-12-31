@@ -15,7 +15,10 @@ errcheck:
 test: testdeps
 	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60
 
-testrace: testdeps
+test-verbose: testdeps
+	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60 -v
+
+test-race: testdeps
 	KAFKA_DIR=$(KAFKA_DIR) go test ./... -ginkgo.slowSpecThreshold=60 -v -race
 
 testdeps: $(KAFKA_ROOT)

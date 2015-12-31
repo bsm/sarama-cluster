@@ -31,6 +31,13 @@ type offsetInfo struct {
 	Metadata string
 }
 
+func (i offsetInfo) NextOffset(fallback int64) int64 {
+	if i.Offset > -1 {
+		return i.Offset + 1
+	}
+	return fallback
+}
+
 type int32Slice []int32
 
 func (p int32Slice) Len() int           { return len(p) }

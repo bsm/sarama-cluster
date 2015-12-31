@@ -31,11 +31,11 @@ var _ = Describe("partitionConsumer", func() {
 		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{200, "m3ta"}, sarama.OffsetOldest)
 		Expect(err).NotTo(HaveOccurred())
 		defer pc.Close()
+		close(pc.dead)
 
 		state := pc.State()
-		Expect(state.Info.Offset).To(Equal(sarama.OffsetOldest))
+		Expect(state.Info.Offset).To(Equal(int64(-1)))
 		Expect(state.Info.Metadata).To(Equal("m3ta"))
-		close(pc.dead)
 	})
 
 	It("should update state", func() {

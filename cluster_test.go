@@ -32,6 +32,18 @@ func init() {
 	}
 }
 
+var _ = Describe("offsetInfo", func() {
+
+	It("should calculate next offset", func() {
+		Expect(offsetInfo{-2, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(sarama.OffsetOldest))
+		Expect(offsetInfo{-2, ""}.NextOffset(sarama.OffsetNewest)).To(Equal(sarama.OffsetNewest))
+		Expect(offsetInfo{-1, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(sarama.OffsetOldest))
+		Expect(offsetInfo{0, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(int64(1)))
+		Expect(offsetInfo{100, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(int64(101)))
+	})
+
+})
+
 // --------------------------------------------------------------------
 
 var _ = BeforeSuite(func() {

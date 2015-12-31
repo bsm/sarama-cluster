@@ -76,27 +76,27 @@ var _ = Describe("Consumer", func() {
 		consume("E", "fuzzing", 200, acc)
 
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
-		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 5000))
+		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
 
 		consume("F", "fuzzing", 300, acc)
 		consume("G", "fuzzing", 400, acc)
 		consume("H", "fuzzing", 1000, acc)
 		consume("I", "fuzzing", 2000, acc)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
-		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 8000))
+		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 8000))
 
 		consume("J", "fuzzing", 1000, acc)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
-		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 9000))
+		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 9000))
 
 		consume("K", "fuzzing", 1000, acc)
 		consume("L", "fuzzing", 3000, acc)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
-		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 12000))
+		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 12000))
 
 		consume("M", "fuzzing", 1000, acc)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
-		Eventually(func() int { return len(acc) }, "60s", "100ms").Should(BeNumerically(">=", 15000))
+		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 15000))
 
 		close(acc)
 

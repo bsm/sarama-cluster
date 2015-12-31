@@ -17,12 +17,12 @@ type partitionConsumer struct {
 }
 
 func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32, info offsetInfo, defaultOffset int64) (*partitionConsumer, error) {
-	pcm, err := manager.ConsumePartition(topic, partition, info.Offset)
+	pcm, err := manager.ConsumePartition(topic, partition, info.NextOffset(defaultOffset))
 
-	// resume from default offset, if requested offset is out-of-range
+	// Resume from default offset, if requested offset is out-of-range
 	if err == sarama.ErrOffsetOutOfRange {
-		info.Offset = defaultOffset
-		pcm, err = manager.ConsumePartition(topic, partition, info.Offset)
+		info.Offset = -1
+		pcm, err = manager.ConsumePartition(topic, partition, defaultOffset)
 	}
 	if err != nil {
 		return nil, err

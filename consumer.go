@@ -201,6 +201,7 @@ func (c *Consumer) release() error {
 	err := c.commitOffsetsWithRetry(c.config.Group.Offsets.Retry.Max)
 
 	// Clear subscriptions
+	// c.debug("$", "")
 	c.subs.Clear()
 
 	return err
@@ -228,7 +229,7 @@ func (c *Consumer) heartbeat() error {
 // Performs a rebalance, part of the mainLoop()
 func (c *Consumer) rebalance() error {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
-	// c.debug("@", "")
+	// c.debug("^", "")
 
 	if err := c.selectBroker(); err != nil {
 		return err
@@ -382,7 +383,7 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 	return members.Topics, nil
 }
 
-// Fetches offsets for all subscriptions
+// Fetches latest committed offsets for all subscriptions
 func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]offsetInfo, error) {
 	offsets := make(map[string]map[int32]offsetInfo, len(subs))
 	req := &sarama.OffsetFetchRequest{
@@ -393,9 +394,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 	for topic, partitions := range subs {
 		offsets[topic] = make(map[int32]offsetInfo, len(partitions))
 		for _, partition := range partitions {
-			offsets[topic][partition] = offsetInfo{
-				Offset: c.config.Consumer.Offsets.Initial,
-			}
+			offsets[topic][partition] = offsetInfo{Offset: -1}
 			req.AddPartition(topic, partition)
 		}
 	}
@@ -420,9 +419,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 			}
 
 			if block.Err == sarama.ErrNoError {
-				if block.Offset > -1 {
-					offsets[topic][partition] = offsetInfo{Offset: block.Offset + 1, Metadata: block.Metadata}
-				}
+				offsets[topic][partition] = offsetInfo{Offset: block.Offset, Metadata: block.Metadata}
 			} else {
 				return nil, block.Err
 			}
@@ -447,8 +444,8 @@ func (c *Consumer) leaveGroup() error {
 // --------------------------------------------------------------------
 
 func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
-	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.Offset)
-	// c.debug(">", "%s/%d/%d", topic, partition, info.Offset)
+	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.config.Consumer.Offsets.Initial))
+	// c.debug(">", "%s/%d/%d", topic, partition, info.NextOffset(c.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
 	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.config.Consumer.Offsets.Initial)
@@ -477,8 +474,8 @@ func (c *Consumer) commitOffsets() error {
 	var blocks int
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
+		// c.debug("+", "%s/%d/%d, dirty: %v", tp.Topic, tp.Partition, state.Info.Offset, state.Dirty)
 		if state.Dirty {
-			// c.debug("+", "%s/%d/%d", tp.Topic, tp.Partition, state.Info.Offset)
 			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
 			blocks++
 		}
@@ -522,6 +519,5 @@ func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 // --------------------------------------------------------------------
 
 // func (c *Consumer) debug(sign string, format string, argv ...interface{}) {
-// 	msg := fmt.Sprintf(format, argv...)
-// 	fmt.Printf("%s %s %s\n", sign, c.consumerID, msg)
+// 	fmt.Printf("%s %s %s\n", sign, c.consumerID, fmt.Sprintf(format, argv...))
 // }

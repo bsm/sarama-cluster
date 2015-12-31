@@ -8,4 +8,4 @@ install:
 env:
   - SCALA_VERSION=2.11 KAFKA_VERSION=0.9.0.0
 script:
-  - make default testrace
+  - make default test-race
