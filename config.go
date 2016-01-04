@@ -3,7 +3,7 @@ package cluster
 import (
 	"time"
 
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 )
 
 // Config extends sarama.Config with Group specific namespace

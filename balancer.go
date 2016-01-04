@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 )
 
 type topicInfo struct {

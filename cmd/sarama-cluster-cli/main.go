@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 	"gopkg.in/bsm/sarama-cluster.v2"
 )
 

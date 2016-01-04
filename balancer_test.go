@@ -1,7 +1,7 @@
 package cluster
 
 import (
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"

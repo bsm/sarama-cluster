@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 )
 
 type partitionConsumer struct {

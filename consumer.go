@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dim/sarama"
+	"github.com/Shopify/sarama"
 )
 
 // Consumer is a cluster group consumer
