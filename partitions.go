@@ -203,3 +203,60 @@ func (m *partitionMap) Info() map[string][]int32 {
 	}
 	return info
 }
+
+// Diffs map with current partitionMap, returns additions and removals
+func Diff(current map[string][]int32, new map[string][]int32) (map[string][]int32, map[string][]int32) {
+	additions := make(map[string][]int32)
+	removals := make(map[string][]int32)
+
+	for topic, parts := range current {
+		if  otherParts, ok := new[topic]; ok {
+			rems := compare(parts, otherParts)
+
+			if len(rems) > 0 {
+				removals[topic] = rems
+			}
+
+			adds := compare(otherParts, parts)
+
+			if len(adds) > 0 {
+				additions[topic] = adds
+			}
+		} else {
+			removals[topic] = new[topic]
+		}
+	}
+
+	for topic, otherParts := range new {
+		if _, ok := current[topic]; !ok {
+			additions[topic] = otherParts
+		}
+	}
+
+	return additions, removals
+}
+
+// http://stackoverflow.com/questions/23870102/compare-two-slices
+func compare(X, Y []int32) []int32 {
+	counts := make(map[int32]int)
+	var total int32
+	for _, val := range X {
+		counts[val] += 1
+		total += 1
+	}
+	for _, val := range Y {
+		if count := counts[val]; count > 0 {
+			counts[val] -= 1
+			total -= 1
+		}
+	}
+	difference := make([]int32, total)
+	i := 0
+	for val, count := range counts {
+		for j := 0; j < count; j++ {
+			difference[i] = val
+			i++
+		}
+	}
+	return difference
+}

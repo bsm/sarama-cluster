@@ -7,6 +7,18 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+type RebalanceEventType int
+
+const (
+	PartitionAssigned RebalanceEventType = iota
+	PartitionRevoked RebalanceEventType = iota
+)
+
+type RebalanceEvent struct {
+	Topics	map[string][]int32
+	Type	RebalanceEventType
+}
+
 // Consumer is a cluster group consumer
 type Consumer struct {
 	client sarama.Client
@@ -27,6 +39,7 @@ type Consumer struct {
 
 	errors   chan error
 	messages chan *sarama.ConsumerMessage
+	rebal chan *RebalanceEvent
 }
 
 // NewConsumer initializes a new consumer
@@ -65,6 +78,7 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 
 		errors:   make(chan error, config.ChannelBufferSize),
 		messages: make(chan *sarama.ConsumerMessage, config.ChannelBufferSize),
+		rebal: make(chan *RebalanceEvent, 1),
 	}
 	if err := c.selectBroker(); err != nil {
 		_ = client.Close()
@@ -84,6 +98,11 @@ func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages
 // you want to implement any custom error handling, set your config's
 // Consumer.Return.Errors setting to true, and read from this channel.
 func (c *Consumer) Errors() <-chan error { return c.errors }
+
+// RebalanceEvents returns a channel of RebalanceEvents that occur during consumer
+// rebalancing, similar to the ConsumerRebalanceListener in the Java Client API
+// The partitions revoked event will always proceed partition assigned event.
+func (c *Consumer) RebalanceEvents() <-chan *RebalanceEvent { return c.rebal }
 
 // MarkOffset marks the provided message as processed, alongside a metadata string
 // that represents the state of the partition consumer at that point in time. The
@@ -235,6 +254,8 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
+	oldSubs := c.subs.Info()
+
 	if err := c.release(); err != nil {
 		return err
 	}
@@ -263,6 +284,10 @@ func (c *Consumer) rebalance() error {
 		_ = c.leaveGroup()
 		return err
 	}
+
+	adds, rems := Diff(oldSubs, subs)
+	c.rebal <- &RebalanceEvent{Topics: rems, Type: PartitionRevoked}
+	c.rebal <- &RebalanceEvent{Topics: adds, Type: PartitionAssigned}
 
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
