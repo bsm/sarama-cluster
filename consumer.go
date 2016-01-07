@@ -11,12 +11,12 @@ type RebalanceEventType int
 
 const (
 	PartitionAssigned RebalanceEventType = iota
-	PartitionRevoked RebalanceEventType = iota
+	PartitionRevoked  RebalanceEventType = iota
 )
 
 type RebalanceEvent struct {
-	Topics	map[string][]int32
-	Type	RebalanceEventType
+	Topics map[string][]int32
+	Type   RebalanceEventType
 }
 
 // Consumer is a cluster group consumer
@@ -39,7 +39,7 @@ type Consumer struct {
 
 	errors   chan error
 	messages chan *sarama.ConsumerMessage
-	rebal chan *RebalanceEvent
+	rebal    chan *RebalanceEvent
 }
 
 // NewConsumer initializes a new consumer
@@ -78,7 +78,7 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 
 		errors:   make(chan error, config.ChannelBufferSize),
 		messages: make(chan *sarama.ConsumerMessage, config.ChannelBufferSize),
-		rebal: make(chan *RebalanceEvent, 1),
+		rebal:    make(chan *RebalanceEvent, 1),
 	}
 	if err := c.selectBroker(); err != nil {
 		_ = client.Close()

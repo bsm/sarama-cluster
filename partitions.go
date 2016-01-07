@@ -210,7 +210,7 @@ func Diff(current map[string][]int32, new map[string][]int32) (map[string][]int3
 	removals := make(map[string][]int32)
 
 	for topic, parts := range current {
-		if  otherParts, ok := new[topic]; ok {
+		if otherParts, ok := new[topic]; ok {
 			rems := compare(parts, otherParts)
 
 			if len(rems) > 0 {
