@@ -11,7 +11,7 @@ type RebalanceEventType int
 
 const (
 	PartitionAssigned RebalanceEventType = iota
-	PartitionRevoked  RebalanceEventType = iota
+	PartitionRevoked
 )
 
 type RebalanceEvent struct {
