@@ -7,7 +7,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-type RebalanceEventType int
+type RebalanceEventType uint8
 
 const (
 	PartitionAssigned RebalanceEventType = iota
