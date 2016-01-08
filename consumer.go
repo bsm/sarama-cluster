@@ -254,11 +254,11 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
-	oldSubs := c.subs.Info()
-
 	if err := c.release(); err != nil {
 		return err
 	}
+
+	c.rebal <- &RebalanceEvent{Topics: c.subs.Info(), Type: PartitionRevoked}
 
 	strategy, err := c.joinGroup()
 	switch {
@@ -285,9 +285,7 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
-	adds, rems := Diff(oldSubs, subs)
-	c.rebal <- &RebalanceEvent{Topics: rems, Type: PartitionRevoked}
-	c.rebal <- &RebalanceEvent{Topics: adds, Type: PartitionAssigned}
+	c.rebal <- &RebalanceEvent{Topics: subs, Type: PartitionAssigned}
 
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
