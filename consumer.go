@@ -254,11 +254,13 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
+	oldSubs := c.subs.Info()
+
 	if err := c.release(); err != nil {
 		return err
 	}
 
-	c.rebal <- &RebalanceEvent{Topics: c.subs.Info(), Type: PartitionRevoked}
+	c.rebal <- &RebalanceEvent{Topics: oldSubs, Type: PartitionRevoked}
 
 	strategy, err := c.joinGroup()
 	switch {
