@@ -140,6 +140,9 @@ func (c *Consumer) Close() (err error) {
 	if e := c.leaveGroup(); e != nil {
 		err = e
 	}
+
+	close(c.rebal)
+
 	if e := c.client.Close(); e != nil {
 		err = e
 	}
