@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -25,8 +26,9 @@ type Consumer struct {
 
 	dying, dead chan none
 
-	errors   chan error
-	messages chan *sarama.ConsumerMessage
+	errors        chan error
+	messages      chan *sarama.ConsumerMessage
+	notifications chan *Notification
 }
 
 // NewConsumer initializes a new consumer
@@ -63,8 +65,9 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 		dying: make(chan none),
 		dead:  make(chan none),
 
-		errors:   make(chan error, config.ChannelBufferSize),
-		messages: make(chan *sarama.ConsumerMessage, config.ChannelBufferSize),
+		errors:        make(chan error, config.ChannelBufferSize),
+		messages:      make(chan *sarama.ConsumerMessage, config.ChannelBufferSize),
+		notifications: make(chan *Notification, 1),
 	}
 	if err := c.selectBroker(); err != nil {
 		_ = client.Close()
@@ -84,6 +87,11 @@ func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages
 // you want to implement any custom error handling, set your config's
 // Consumer.Return.Errors setting to true, and read from this channel.
 func (c *Consumer) Errors() <-chan error { return c.errors }
+
+// Notifications returns a channel of Notifications that occur during consumer
+// rebalancing. Notifications will only be emitted over this channel, if your config's
+// Cluster.Return.Notifications setting to true.
+func (c *Consumer) Notifications() <-chan *Notification { return c.notifications }
 
 // MarkOffset marks the provided message as processed, alongside a metadata string
 // that represents the state of the partition consumer at that point in time. The
@@ -121,6 +129,8 @@ func (c *Consumer) Close() (err error) {
 	if e := c.leaveGroup(); e != nil {
 		err = e
 	}
+	close(c.notifications)
+
 	if e := c.client.Close(); e != nil {
 		err = e
 	}
@@ -237,10 +247,25 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
+	// Remember previous subscriptions
+	var notification *Notification
+	if c.config.Group.Return.Notifications {
+		notification = newNotification(c.subs.Info())
+	}
+
+	// Release subscriptions
 	if err := c.release(); err != nil {
 		return err
 	}
 
+	// Defer notification emit
+	if c.config.Group.Return.Notifications {
+		defer func() {
+			c.notifications <- notification
+		}()
+	}
+
+	// Re-join consumer group
 	strategy, err := c.joinGroup()
 	switch {
 	case err == sarama.ErrUnknownMemberId:
@@ -251,6 +276,7 @@ func (c *Consumer) rebalance() error {
 	}
 	// sarama.Logger.Printf("cluster/consumer %s/%d joined group %s\n", c.memberID, c.generationID, c.groupID)
 
+	// Sync consumer group state, fetch subscriptions
 	subs, err := c.syncGroup(strategy)
 	switch {
 	case err == sarama.ErrRebalanceInProgress:
@@ -260,12 +286,14 @@ func (c *Consumer) rebalance() error {
 		return err
 	}
 
+	// Fetch offsets
 	offsets, err := c.fetchOffsets(subs)
 	if err != nil {
 		_ = c.leaveGroup()
 		return err
 	}
 
+	// Create consumers
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
 			if err := c.createConsumer(topic, partition, offsets[topic][partition]); err != nil {
@@ -274,6 +302,11 @@ func (c *Consumer) rebalance() error {
 				return err
 			}
 		}
+	}
+
+	// Update notification with new claims
+	if c.config.Group.Return.Notifications {
+		notification.claim(subs)
 	}
 
 	return nil
@@ -381,6 +414,11 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 	members, err := sync.GetMemberAssignment()
 	if err != nil {
 		return nil, err
+	}
+
+	// Sort partitions, for each topic
+	for topic := range members.Topics {
+		sort.Sort(int32Slice(members.Topics[topic]))
 	}
 	return members.Topics, nil
 }

@@ -7,6 +7,39 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+// Notification events are emitted by the consumers on rebalancing
+type Notification struct {
+	// Claimed contains topic/partitions that were claimed by this rebalance cycle
+	Claimed map[string][]int32
+
+	// Released contains topic/partitions that were released as part of this rebalance cycle
+	Released map[string][]int32
+
+	// Current are topic/partitions that are currently claimed to the consumer
+	Current map[string][]int32
+}
+
+func newNotification(released map[string][]int32) *Notification {
+	return &Notification{
+		Claimed:  make(map[string][]int32),
+		Released: released,
+		Current:  make(map[string][]int32),
+	}
+}
+
+func (n *Notification) claim(current map[string][]int32) {
+	previous := n.Released
+	for topic, partitions := range current {
+		n.Claimed[topic] = int32Slice(partitions).Diff(int32Slice(previous[topic]))
+	}
+	for topic, partitions := range previous {
+		n.Released[topic] = int32Slice(partitions).Diff(int32Slice(current[topic]))
+	}
+	n.Current = current
+}
+
+// --------------------------------------------------------------------
+
 type topicInfo struct {
 	Partitions []int32
 	MemberIDs  []string
