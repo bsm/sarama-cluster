@@ -1,5 +1,7 @@
 package cluster
 
+import "sort"
+
 // Strategy for partition to consumer assignement
 type Strategy string
 
@@ -43,3 +45,15 @@ type int32Slice []int32
 func (p int32Slice) Len() int           { return len(p) }
 func (p int32Slice) Less(i, j int) bool { return p[i] < p[j] }
 func (p int32Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func (p int32Slice) Diff(o int32Slice) (res []int32) {
+	on := len(o)
+	for _, x := range p {
+		n := sort.Search(on, func(i int) bool { return o[i] >= x })
+		if n < on && o[n] == x {
+			continue
+		}
+		res = append(res, x)
+	}
+	return
+}

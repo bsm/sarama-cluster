@@ -40,6 +40,7 @@ func main() {
 		sarama.Logger = logger
 	} else {
 		config.Consumer.Return.Errors = true
+		config.Group.Return.Notifications = true
 	}
 
 	switch *offset {
@@ -59,7 +60,13 @@ func main() {
 
 	go func() {
 		for err := range consumer.Errors() {
-			logger.Printf("Error: %s", err.Error())
+			logger.Printf("Error: %s\n", err.Error())
+		}
+	}()
+
+	go func() {
+		for note := range consumer.Notifications() {
+			logger.Printf("Rebalanced: %+v\n", note)
 		}
 	}()
 

@@ -30,6 +30,13 @@ type Config struct {
 			// than 1/3rd of the Group.Session.Timout setting
 			Interval time.Duration
 		}
+		// Return specifies which group channels will be populated. If they are set to true,
+		// you must read from the respective channels to prevent deadlock.
+		Return struct {
+			// If enabled, rebalance notification will be returned on the
+			// Notifications channel (default disabled).
+			Notifications bool
+		}
 	}
 }
 
