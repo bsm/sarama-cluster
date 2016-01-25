@@ -13,6 +13,7 @@ type partitionConsumer struct {
 	state partitionState
 	mutex sync.Mutex
 
+	closed      bool
 	dying, dead chan none
 }
 
@@ -62,6 +63,11 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 }
 
 func (c *partitionConsumer) Close() (err error) {
+	if c.closed {
+		return
+	}
+
+	c.closed = true
 	close(c.dying)
 	<-c.dead
 
@@ -170,7 +176,9 @@ func (m *partitionMap) Stop() (err error) {
 	size := len(m.data)
 	errs := make(chan error, size)
 	for tp := range m.data {
-		go func(p *partitionConsumer) { errs <- p.Close() }(m.data[tp])
+		go func(p *partitionConsumer) {
+			errs <- p.Close()
+		}(m.data[tp])
 	}
 	m.mutex.RUnlock()
 

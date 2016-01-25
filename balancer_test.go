@@ -43,10 +43,6 @@ var _ = Describe("balancer", func() {
 		}))
 	})
 
-	PIt("should balance evenly", func() {
-		Expect("TODO").To(Equal("DONE"))
-	})
-
 })
 
 var _ = Describe("topicInfo", func() {

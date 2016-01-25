@@ -18,6 +18,7 @@ var _ = Describe("partitionConsumer", func() {
 	AfterEach(func() {
 		close(subject.dead)
 		Expect(subject.Close()).NotTo(HaveOccurred())
+		Expect(subject.Close()).NotTo(HaveOccurred()) // test that consumer can be closed 2x
 	})
 
 	It("should set state", func() {

@@ -188,23 +188,25 @@ func (c *Consumer) handleError(err error) {
 }
 
 // Releases the consumer and commits offsets, called from rebalance() and Close()
-func (c *Consumer) release() error {
-	// Stop all consumers
-	if err := c.subs.Stop(); err != nil {
-		return err
+func (c *Consumer) release() (err error) {
+	// Stop all consumers, don't stop on errors
+	if e := c.subs.Stop(); e != nil {
+		err = e
 	}
 
 	// Wait for all messages to be processed
 	time.Sleep(c.config.Consumer.MaxProcessingTime)
 
 	// Commit offsets
-	err := c.commitOffsetsWithRetry(c.config.Group.Offsets.Retry.Max)
+	if e := c.commitOffsetsWithRetry(c.config.Group.Offsets.Retry.Max); e != nil {
+		err = e
+	}
 
 	// Clear subscriptions
 	// c.debug("$", "")
 	c.subs.Clear()
 
-	return err
+	return
 }
 
 // --------------------------------------------------------------------
