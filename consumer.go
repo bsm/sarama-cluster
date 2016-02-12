@@ -10,10 +10,9 @@ import (
 
 // Consumer is a cluster group consumer
 type Consumer struct {
-	client sarama.Client
+	client *Client
 	broker *sarama.Broker
 	brlock sync.Mutex
-	config *Config
 
 	csmr sarama.Consumer
 	subs *partitionMap
@@ -31,29 +30,14 @@ type Consumer struct {
 	notifications chan *Notification
 }
 
-// NewConsumer initializes a new consumer
-func NewConsumer(addrs []string, groupID string, topics []string, config *Config) (*Consumer, error) {
-	if config == nil {
-		config = NewConfig()
-	}
-
-	if err := config.Validate(); err != nil {
-		return nil, err
-	}
-
-	client, err := sarama.NewClient(addrs, &config.Config)
+// NewConsumerFromClient initializes a new consumer from an existing client
+func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Consumer, error) {
+	csmr, err := sarama.NewConsumerFromClient(client.Client)
 	if err != nil {
-		return nil, err
-	}
-
-	csmr, err := sarama.NewConsumerFromClient(client)
-	if err != nil {
-		_ = client.Close()
 		return nil, err
 	}
 
 	c := &Consumer{
-		config: config,
 		client: client,
 
 		csmr: csmr,
@@ -65,17 +49,32 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 		dying: make(chan none),
 		dead:  make(chan none),
 
-		errors:        make(chan error, config.ChannelBufferSize),
-		messages:      make(chan *sarama.ConsumerMessage, config.ChannelBufferSize),
+		errors:        make(chan error, client.config.ChannelBufferSize),
+		messages:      make(chan *sarama.ConsumerMessage, client.config.ChannelBufferSize),
 		notifications: make(chan *Notification, 1),
 	}
 	if err := c.selectBroker(); err != nil {
-		_ = client.Close()
 		return nil, err
 	}
 
 	go c.mainLoop()
 	return c, nil
+}
+
+// NewConsumer initializes a new consumer
+func NewConsumer(addrs []string, groupID string, topics []string, config *Config) (*Consumer, error) {
+	client, err := NewClient(addrs, config)
+	if err != nil {
+		return nil, err
+	}
+
+	consumer, err := NewConsumerFromClient(client, groupID, topics)
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	consumer.client.own = true
+	return consumer, nil
 }
 
 // Messages returns the read channel for the messages that are returned by
@@ -131,8 +130,10 @@ func (c *Consumer) Close() (err error) {
 	}
 	close(c.notifications)
 
-	if e := c.client.Close(); e != nil {
-		err = e
+	if c.client.own {
+		if e := c.client.Close(); e != nil {
+			err = e
+		}
 	}
 
 	return
@@ -143,7 +144,7 @@ func (c *Consumer) mainLoop() {
 		// rebalance
 		if err := c.rebalance(); err != nil {
 			c.handleError(err)
-			time.Sleep(c.config.Metadata.Retry.Backoff)
+			time.Sleep(c.client.config.Metadata.Retry.Backoff)
 			continue
 		}
 
@@ -157,10 +158,10 @@ func (c *Consumer) mainLoop() {
 
 // enters consume state, triggered by the mainLoop
 func (c *Consumer) consume() bool {
-	hbTicker := time.NewTicker(c.config.Group.Heartbeat.Interval)
+	hbTicker := time.NewTicker(c.client.config.Group.Heartbeat.Interval)
 	defer hbTicker.Stop()
 
-	ocTicker := time.NewTicker(c.config.Consumer.Offsets.CommitInterval)
+	ocTicker := time.NewTicker(c.client.config.Consumer.Offsets.CommitInterval)
 	defer ocTicker.Stop()
 
 	for {
@@ -175,7 +176,7 @@ func (c *Consumer) consume() bool {
 				return false
 			}
 		case <-ocTicker.C:
-			if err := c.commitOffsetsWithRetry(c.config.Group.Offsets.Retry.Max); err != nil {
+			if err := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); err != nil {
 				c.handleError(err)
 				return false
 			}
@@ -186,7 +187,7 @@ func (c *Consumer) consume() bool {
 }
 
 func (c *Consumer) handleError(err error) {
-	if c.config.Consumer.Return.Errors {
+	if c.client.config.Consumer.Return.Errors {
 		select {
 		case c.errors <- err:
 		case <-c.dying:
@@ -205,10 +206,10 @@ func (c *Consumer) release() (err error) {
 	}
 
 	// Wait for all messages to be processed
-	time.Sleep(c.config.Consumer.MaxProcessingTime)
+	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
 
 	// Commit offsets
-	if e := c.commitOffsetsWithRetry(c.config.Group.Offsets.Retry.Max); e != nil {
+	if e := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); e != nil {
 		err = e
 	}
 
@@ -249,7 +250,7 @@ func (c *Consumer) rebalance() error {
 
 	// Remember previous subscriptions
 	var notification *Notification
-	if c.config.Group.Return.Notifications {
+	if c.client.config.Group.Return.Notifications {
 		notification = newNotification(c.subs.Info())
 	}
 
@@ -259,7 +260,7 @@ func (c *Consumer) rebalance() error {
 	}
 
 	// Defer notification emit
-	if c.config.Group.Return.Notifications {
+	if c.client.config.Group.Return.Notifications {
 		defer func() {
 			c.notifications <- notification
 		}()
@@ -305,7 +306,7 @@ func (c *Consumer) rebalance() error {
 	}
 
 	// Update notification with new claims
-	if c.config.Group.Return.Notifications {
+	if c.client.config.Group.Return.Notifications {
 		notification.claim(subs)
 	}
 
@@ -336,7 +337,7 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 	req := &sarama.JoinGroupRequest{
 		GroupId:        c.groupID,
 		MemberId:       c.memberID,
-		SessionTimeout: int32(c.config.Group.Session.Timeout / time.Millisecond),
+		SessionTimeout: int32(c.client.config.Group.Session.Timeout / time.Millisecond),
 		ProtocolType:   "consumer",
 	}
 
@@ -391,7 +392,7 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		MemberId:     c.memberID,
 		GenerationId: c.generationID,
 	}
-	for memberID, topics := range strategy.Perform(c.config.Group.PartitionStrategy) {
+	for memberID, topics := range strategy.Perform(c.client.config.Group.PartitionStrategy) {
 		if err := req.AddGroupAssignmentMember(memberID, &sarama.ConsumerGroupMemberAssignment{
 			Version: 1,
 			Topics:  topics,
@@ -440,7 +441,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 	}
 
 	// Wait for other cluster consumers to process, release and commit
-	time.Sleep(c.config.Consumer.MaxProcessingTime * 2)
+	time.Sleep(c.client.config.Consumer.MaxProcessingTime * 2)
 
 	c.brlock.Lock()
 	broker := c.broker
@@ -484,11 +485,11 @@ func (c *Consumer) leaveGroup() error {
 // --------------------------------------------------------------------
 
 func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
-	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.config.Consumer.Offsets.Initial))
-	// c.debug(">", "%s/%d/%d", topic, partition, info.NextOffset(c.config.Consumer.Offsets.Initial))
+	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
+	// c.debug(">", "%s/%d/%d", topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
-	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.config.Consumer.Offsets.Initial)
+	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
 	if err != nil {
 		return nil
 	}
