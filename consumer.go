@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -11,8 +10,6 @@ import (
 // Consumer is a cluster group consumer
 type Consumer struct {
 	client *Client
-	broker *sarama.Broker
-	brlock sync.Mutex
 
 	csmr sarama.Consumer
 	subs *partitionMap
@@ -53,7 +50,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		messages:      make(chan *sarama.ConsumerMessage, client.config.ChannelBufferSize),
 		notifications: make(chan *Notification, 1),
 	}
-	if err := c.selectBroker(); err != nil {
+	if err := c.client.RefreshCoordinator(groupID); err != nil {
 		return nil, err
 	}
 
@@ -224,9 +221,10 @@ func (c *Consumer) release() (err error) {
 
 // Performs a heartbeat, part of the mainLoop()
 func (c *Consumer) heartbeat() error {
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return err
+	}
 
 	resp, err := broker.Heartbeat(&sarama.HeartbeatRequest{
 		GroupId:      c.groupID,
@@ -244,7 +242,7 @@ func (c *Consumer) rebalance() error {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
 	// c.debug("^", "")
 
-	if err := c.selectBroker(); err != nil {
+	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
 		return err
 	}
 
@@ -315,23 +313,6 @@ func (c *Consumer) rebalance() error {
 
 // --------------------------------------------------------------------
 
-// Performs a broker selection, caches the broker
-func (c *Consumer) selectBroker() error {
-	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
-		return err
-	}
-	broker, err := c.client.Coordinator(c.groupID)
-	if err != nil {
-		return err
-	}
-
-	c.brlock.Lock()
-	c.broker = broker
-	c.brlock.Unlock()
-
-	return nil
-}
-
 // Send a request to the broker to join group on rebalance()
 func (c *Consumer) joinGroup() (*balancer, error) {
 	req := &sarama.JoinGroupRequest{
@@ -354,9 +335,10 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 		return nil, err
 	}
 
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := broker.JoinGroup(req)
 	if err != nil {
@@ -401,9 +383,10 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		}
 	}
 
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return nil, err
+	}
 
 	sync, err := broker.SyncGroup(req)
 	if err != nil {
@@ -443,9 +426,10 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 	// Wait for other cluster consumers to process, release and commit
 	time.Sleep(c.client.config.Consumer.MaxProcessingTime * 2)
 
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := broker.FetchOffset(req)
 	if err != nil {
@@ -471,11 +455,12 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 
 // Send a request to the broker to leave the group on failes rebalance() and on Close()
 func (c *Consumer) leaveGroup() error {
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return err
+	}
 
-	_, err := broker.LeaveGroup(&sarama.LeaveGroupRequest{
+	_, err = broker.LeaveGroup(&sarama.LeaveGroupRequest{
 		GroupId:  c.groupID,
 		MemberId: c.memberID,
 	})
@@ -525,9 +510,10 @@ func (c *Consumer) commitOffsets() error {
 		return nil
 	}
 
-	c.brlock.Lock()
-	broker := c.broker
-	c.brlock.Unlock()
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return err
+	}
 
 	resp, err := broker.CommitOffset(req)
 	if err != nil {
@@ -551,7 +537,7 @@ func (c *Consumer) commitOffsets() error {
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	err := c.commitOffsets()
 	if err != nil && retries > 0 && c.subs.HasDirty() {
-		_ = c.selectBroker()
+		_ = c.client.RefreshCoordinator(c.groupID)
 		return c.commitOffsetsWithRetry(retries - 1)
 	}
 	return err
