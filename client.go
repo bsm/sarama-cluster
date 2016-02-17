@@ -1,6 +1,6 @@
 package cluster
 
-import "github.com/Shopify/sarama"
+import "gopkg.in/Shopify/sarama.v1"
 
 // Client is a group client
 type Client struct {
