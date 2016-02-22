@@ -495,6 +495,7 @@ func (c *Consumer) commitOffsets() error {
 		ConsumerGroup:           c.groupID,
 		ConsumerGroupGeneration: c.generationID,
 		ConsumerID:              c.memberID,
+		RetentionTime:           -1,
 	}
 
 	var blocks int
