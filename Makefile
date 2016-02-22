@@ -4,7 +4,7 @@ KAFKA_DIR= kafka_$(SCALA_VERSION)-$(KAFKA_VERSION)
 KAFKA_SRC= http://www.mirrorservice.org/sites/ftp.apache.org/kafka/$(KAFKA_VERSION)/$(KAFKA_DIR).tgz
 KAFKA_ROOT= testdata/$(KAFKA_DIR)
 
-default: vet errcheck test
+default: vet test
 
 vet:
 	go vet ./...
