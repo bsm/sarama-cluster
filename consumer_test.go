@@ -33,6 +33,14 @@ var _ = Describe("Consumer", func() {
 		}()
 	}
 
+	It("should fail for invalid group id", func() {
+		_, err := newConsumer("")
+		Expect(err).To(HaveOccurred())
+
+		_, err = newConsumer("foo:bar")
+		Expect(err).To(HaveOccurred())
+	})
+
 	It("should init and share", func() {
 		cs1, err := newConsumer(testGroup)
 		Expect(err).NotTo(HaveOccurred())

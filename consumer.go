@@ -1,11 +1,14 @@
 package cluster
 
 import (
+	"regexp"
 	"sort"
 	"time"
 
 	"gopkg.in/Shopify/sarama.v1"
 )
+
+var validGroupIDChars *regexp.Regexp = regexp.MustCompile(`\A[A-Za-z0-9._-]*\z`)
 
 // Consumer is a cluster group consumer
 type Consumer struct {
@@ -32,6 +35,12 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 	csmr, err := sarama.NewConsumerFromClient(client.Client)
 	if err != nil {
 		return nil, err
+	}
+
+	if groupID == "" {
+		return nil, sarama.ConfigurationError("GroupID cannot be empty")
+	} else if !validGroupIDChars.MatchString(groupID) {
+		return nil, sarama.ConfigurationError("GroupID can only contain alphanumerics, '.', '_', and '-'")
 	}
 
 	c := &Consumer{
