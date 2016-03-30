@@ -22,7 +22,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 
 	// Resume from default offset, if requested offset is out-of-range
 	if err == sarama.ErrOffsetOutOfRange {
-		info.Offset = -1
+		info.Offset = defaultOffset
 		pcm, err = manager.ConsumePartition(topic, partition, defaultOffset)
 	}
 	if err != nil {
