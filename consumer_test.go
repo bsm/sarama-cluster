@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -10,7 +11,21 @@ import (
 var _ = Describe("Consumer", func() {
 
 	var newConsumer = func(group string) (*Consumer, error) {
-		return NewConsumer(testKafkaAddrs, group, testTopics, nil)
+		config := NewConfig()
+		config.Consumer.Return.Errors = true
+		return NewConsumer(testKafkaAddrs, group, testTopics, config)
+	}
+
+	var newConsumerOf = func(group, topic string) (*Consumer, error) {
+		config := NewConfig()
+		config.Consumer.Return.Errors = true
+		return NewConsumer(testKafkaAddrs, group, []string{topic}, config)
+	}
+
+	var subscriptionsOf = func(c *Consumer) GomegaAsyncAssertion {
+		return Eventually(func() map[string][]int32 {
+			return c.Subscriptions()
+		}, "10s", "100ms")
 	}
 
 	var consume = func(consumerID, group string, max int, out chan *testConsumerMessage) {
@@ -38,9 +53,7 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer cs1.Close()
 
-		Eventually(func() map[string][]int32 {
-			return cs1.Subscriptions()
-		}, "10s", "100ms").Should(Equal(map[string][]int32{
+		subscriptionsOf(cs1).Should(Equal(map[string][]int32{
 			"topic-a": {0, 1, 2, 3},
 			"topic-b": {0, 1, 2, 3},
 		}))
@@ -49,22 +62,60 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer cs2.Close()
 
-		Eventually(func() map[string][]int32 {
-			return cs2.Subscriptions()
-		}, "10s", "100ms").Should(HaveLen(2))
+		subscriptionsOf(cs1).Should(HaveLen(2))
+		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
+		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
 
-		Eventually(func() map[string][]int32 {
-			return cs1.Subscriptions()
-		}).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
-		Eventually(func() map[string][]int32 {
-			return cs1.Subscriptions()
-		}).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
-		Eventually(func() map[string][]int32 {
-			return cs2.Subscriptions()
-		}).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
-		Eventually(func() map[string][]int32 {
-			return cs2.Subscriptions()
-		}).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+		subscriptionsOf(cs2).Should(HaveLen(2))
+		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
+		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+	})
+
+	It("should allow more consumers than partitions", func() {
+		cs1, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs1.Close()
+		cs2, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs2.Close()
+		cs3, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs3.Close()
+		cs4, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+
+		// start 4 consumers, one for each partition
+		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+		subscriptionsOf(cs3).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+		subscriptionsOf(cs4).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+
+		// add a 5th consumer
+		cs5, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs5.Close()
+
+		// wait for rebalance, make sure no errors occurred
+		Eventually(func() bool { return cs5.consuming }, "10s", "100ms").Should(BeTrue())
+		time.Sleep(time.Second)
+		Expect(cs1.Errors()).ShouldNot(Receive())
+		Expect(cs2.Errors()).ShouldNot(Receive())
+		Expect(cs3.Errors()).ShouldNot(Receive())
+		Expect(cs4.Errors()).ShouldNot(Receive())
+		Expect(cs5.Errors()).ShouldNot(Receive())
+
+		// close 4th, make sure the 5th takes over
+		cs4.Close()
+		Eventually(func() bool { return cs4.consuming }, "10s", "100ms").Should(BeFalse())
+		subscriptionsOf(cs4).Should(BeEmpty())
+		subscriptionsOf(cs5).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+
+		// there should still be no errors
+		Expect(cs1.Errors()).ShouldNot(Receive())
+		Expect(cs2.Errors()).ShouldNot(Receive())
+		Expect(cs3.Errors()).ShouldNot(Receive())
+		Expect(cs4.Errors()).ShouldNot(Receive())
+		Expect(cs5.Errors()).ShouldNot(Receive())
 	})
 
 	It("should consume/commit/resume", func() {

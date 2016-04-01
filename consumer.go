@@ -22,6 +22,7 @@ type Consumer struct {
 
 	dying, dead chan none
 
+	consuming     bool
 	errors        chan error
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
@@ -140,6 +141,8 @@ func (c *Consumer) mainLoop() {
 	defer close(c.dead)
 
 	for {
+		c.consuming = false
+
 		// Remember previous subscriptions
 		var notification *Notification
 		if c.client.config.Group.Return.Notifications {
@@ -168,6 +171,7 @@ func (c *Consumer) mainLoop() {
 		// Start consuming and comitting offsets
 		cmStop, cmDone := make(chan struct{}), make(chan struct{})
 		go c.cmLoop(cmStop, cmDone)
+		c.consuming = true
 
 		// Update notification with new claims
 		if c.client.config.Group.Return.Notifications {
@@ -188,6 +192,7 @@ func (c *Consumer) mainLoop() {
 			<-cmDone
 			close(hbStop)
 			<-hbDone
+			c.consuming = false
 			return
 		}
 	}
@@ -241,7 +246,11 @@ func (c *Consumer) rebalanceError(err error, notification *Notification) {
 	if c.client.config.Group.Return.Notifications {
 		c.notifications <- notification
 	}
-	c.handleError(err)
+	switch err {
+	case sarama.ErrRebalanceInProgress:
+	default:
+		c.handleError(err)
+	}
 	time.Sleep(c.client.config.Metadata.Retry.Backoff)
 }
 
@@ -421,6 +430,7 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		MemberId:     c.memberID,
 		GenerationId: c.generationID,
 	}
+
 	for memberID, topics := range strategy.Perform(c.client.config.Group.PartitionStrategy) {
 		if err := req.AddGroupAssignmentMember(memberID, &sarama.ConsumerGroupMemberAssignment{
 			Version: 1,
@@ -442,6 +452,12 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		return nil, sync.Err
 	}
 
+	// Return if there is nothing to subscribe to
+	if len(sync.MemberAssignment) == 0 {
+		return nil, nil
+	}
+
+	// Get assigned subscriptions
 	members, err := sync.GetMemberAssignment()
 	if err != nil {
 		return nil, err
