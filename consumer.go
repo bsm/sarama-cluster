@@ -59,6 +59,19 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 	return c, nil
 }
 
+var (
+	balancerStrategies map[Strategy]Balancer = map[Strategy]Balancer{
+		StrategyRange:      &RangeBalancer{},
+		StrategyRoundRobin: &RoundRobinBalancer{},
+		StrategyStriped:    &StripedBalancer{},
+	}
+)
+
+// RegisterBalancerStrategy allows for use of custom rebalance strategies.
+func RegisterBalancerStrategy(name Strategy, b Balancer) {
+	balancerStrategies[name] = b
+}
+
 // NewConsumer initializes a new consumer
 func NewConsumer(addrs []string, groupID string, topics []string, config *Config) (*Consumer, error) {
 	client, err := NewClient(addrs, config)
@@ -382,13 +395,12 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 		Version: 1,
 		Topics:  c.topics,
 	}
-	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
-	if err != nil {
-		return nil, err
-	}
-	err = req.AddGroupProtocolMetadata(string(StrategyRoundRobin), meta)
-	if err != nil {
-		return nil, err
+
+	for strat, _ := range balancerStrategies {
+		err := req.AddGroupProtocolMetadata(string(strat), meta)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)
