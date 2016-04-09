@@ -96,7 +96,7 @@ var _ = Describe("Consumer", func() {
 		defer cs5.Close()
 
 		// wait for rebalance, make sure no errors occurred
-		Eventually(func() bool { return cs5.consuming }, "10s", "100ms").Should(BeTrue())
+		Eventually(func() bool { return cs5.isConsuming() }, "10s", "100ms").Should(BeTrue())
 		time.Sleep(time.Second)
 		Expect(cs1.Errors()).ShouldNot(Receive())
 		Expect(cs2.Errors()).ShouldNot(Receive())
@@ -106,7 +106,7 @@ var _ = Describe("Consumer", func() {
 
 		// close 4th, make sure the 5th takes over
 		cs4.Close()
-		Eventually(func() bool { return cs4.consuming }, "10s", "100ms").Should(BeFalse())
+		Eventually(func() bool { return cs4.isConsuming() }, "10s", "100ms").Should(BeFalse())
 		subscriptionsOf(cs4).Should(BeEmpty())
 		subscriptionsOf(cs5).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
 

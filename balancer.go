@@ -41,6 +41,21 @@ func (n *Notification) claim(current map[string][]int32) {
 
 // --------------------------------------------------------------------
 
+var (
+	balancerStrategies map[Strategy]Balancer = map[Strategy]Balancer{
+		StrategyRange:      &RangeBalancer{},
+		StrategyRoundRobin: &RoundRobinBalancer{},
+		StrategyStriped:    &StripedBalancer{},
+	}
+)
+
+// RegisterBalancerStrategy allows for use of custom rebalance strategies.
+func RegisterBalancerStrategy(name Strategy, b Balancer) {
+	balancerStrategies[name] = b
+}
+
+// --------------------------------------------------------------------
+
 // Balancer implements a method Rebalance that determines which topics/partitions each
 // member of the group should consume.
 type Balancer interface {

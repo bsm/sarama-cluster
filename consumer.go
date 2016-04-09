@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"sort"
+	"sync"
 	"time"
 
 	"gopkg.in/Shopify/sarama.v1"
@@ -23,6 +24,7 @@ type Consumer struct {
 	dying, dead chan none
 
 	consuming     bool
+	consumingLock sync.Mutex
 	errors        chan error
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
@@ -57,19 +59,6 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 	go c.mainLoop()
 	return c, nil
-}
-
-var (
-	balancerStrategies map[Strategy]Balancer = map[Strategy]Balancer{
-		StrategyRange:      &RangeBalancer{},
-		StrategyRoundRobin: &RoundRobinBalancer{},
-		StrategyStriped:    &StripedBalancer{},
-	}
-)
-
-// RegisterBalancerStrategy allows for use of custom rebalance strategies.
-func RegisterBalancerStrategy(name Strategy, b Balancer) {
-	balancerStrategies[name] = b
 }
 
 // NewConsumer initializes a new consumer
@@ -150,11 +139,23 @@ func (c *Consumer) Close() (err error) {
 	return
 }
 
+func (c *Consumer) isConsuming() bool {
+	c.consumingLock.Lock()
+	defer c.consumingLock.Unlock()
+	return c.consuming
+}
+
+func (c *Consumer) setConsuming(consuming bool) {
+	c.consumingLock.Lock()
+	c.consuming = consuming
+	c.consumingLock.Unlock()
+}
+
 func (c *Consumer) mainLoop() {
 	defer close(c.dead)
 
 	for {
-		c.consuming = false
+		c.setConsuming(false)
 
 		// Remember previous subscriptions
 		var notification *Notification
@@ -184,7 +185,7 @@ func (c *Consumer) mainLoop() {
 		// Start consuming and comitting offsets
 		cmStop, cmDone := make(chan struct{}), make(chan struct{})
 		go c.cmLoop(cmStop, cmDone)
-		c.consuming = true
+		c.setConsuming(true)
 
 		// Update notification with new claims
 		if c.client.config.Group.Return.Notifications {
@@ -205,7 +206,7 @@ func (c *Consumer) mainLoop() {
 			<-cmDone
 			close(hbStop)
 			<-hbDone
-			c.consuming = false
+			c.setConsuming(false)
 			return
 		}
 	}
