@@ -35,16 +35,16 @@ var _ = Describe("balancer", func() {
 	BeforeEach(func() {
 		client := &mockClient{
 			topics: map[string][]int32{
-				"consumer1": {0, 1, 2, 3},
-				"consumer2": {0, 1, 2},
-				"consumer3": {0, 1},
+				"topic1": {0, 1, 2, 3},
+				"topic2": {0, 1, 2},
+				"topic3": {0, 1},
 			},
 		}
 
 		var err error
 		subject, err = newBalancerFromMeta(client, map[string]sarama.ConsumerGroupMemberMetadata{
-			"b": sarama.ConsumerGroupMemberMetadata{Topics: []string{"consumer3", "consumer1"}},
-			"a": sarama.ConsumerGroupMemberMetadata{Topics: []string{"consumer1", "consumer2"}},
+			"consumerB": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic3", "topic1"}},
+			"consumerA": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2"}},
 		})
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -60,24 +60,24 @@ var _ = Describe("balancer", func() {
 	It("should rebalance using the range strategy", func() {
 		rb := &RangeBalancer{}
 		Expect(rb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
-			"a": {"consumer1": {0, 1}, "consumer2": {0, 1, 2}},
-			"b": {"consumer1": {2, 3}, "consumer3": {0, 1}},
+			"consumerA": {"topic1": {0, 1}, "topic2": {0, 1, 2}},
+			"consumerB": {"topic1": {2, 3}, "topic3": {0, 1}},
 		}))
 	})
 
 	It("should rebalance using the round robin strategy", func() {
 		rrb := &RoundRobinBalancer{}
 		Expect(rrb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
-			"a": {"consumer1": {0, 2}, "consumer2": {0, 1, 2}},
-			"b": {"consumer1": {1, 3}, "consumer3": {0, 1}},
+			"consumerA": {"topic1": {0, 2}, "topic2": {0, 1, 2}},
+			"consumerB": {"topic1": {1, 3}, "topic3": {0, 1}},
 		}))
 	})
 
 	It("should rebalance using the striped strategy", func() {
 		sb := &StripedBalancer{}
 		Expect(sb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
-			"a": {"consumer1": {0, 2}, "consumer2": {0, 2}, "consumer3": {1}},
-			"b": {"consumer1": {1, 3}, "consumer2": {1}, "consumer3": {0}},
+			"consumerA": {"topic1": {0, 2}, "topic2": {0, 2}, "topic3": {1}},
+			"consumerB": {"topic1": {1, 3}, "topic2": {1}, "topic3": {0}},
 		}))
 	})
 

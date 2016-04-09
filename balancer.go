@@ -44,6 +44,24 @@ func (n *Notification) claim(current map[string][]int32) {
 // Balancer implements a method Rebalance that determines which topics/partitions each
 // member of the group should consume.
 type Balancer interface {
+	// Rebalance takes a map of topic names with group member and partition information, and
+	// returns a map of group members with a map of the topics/partitions they should consume.
+	// Example input:
+	// Topic1:
+	//   MemberIDs: [Consumer1, Consumer2]
+	//   Partitions: [0, 1]
+	// Topic2:
+	//   MemberIDs: [Consumer2, Consumer3]
+	//   Partitions: [0, 1, 2, 3]
+	// Example output (in this case, StrategyStriped):
+	// Consumer1:
+	//   Topic1: [0]
+	//   Topic2: [1]
+	// Consumer2:
+	//   Topic1: [1]
+	//   Topic2: [2]
+	// Consumer3:
+	//   Topic2: [0, 3]
 	Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32
 }
 
@@ -125,11 +143,11 @@ func rebalanceWithStrategy(topics map[string]TopicInfo,
 // across consumers
 type StripedBalancer struct{}
 
-// AllTopicMembers the unique set of group members for the given map.
-func AllTopicMembers(topics map[string]TopicInfo) []string {
+// AllMembersForGroup the unique set of group members for the given group info map.
+func AllMembersForGroup(group map[string]TopicInfo) []string {
 	memberMap := make(map[string]bool)
 
-	for _, topic := range topics {
+	for _, topic := range group {
 		for _, memberID := range topic.MemberIDs {
 			memberMap[memberID] = true
 		}
@@ -142,11 +160,11 @@ func AllTopicMembers(topics map[string]TopicInfo) []string {
 	return members
 }
 
-// AllTopicsAndPartitions returns a map of partitions with a slice containings
-// their respective partitions.
-func AllTopicsAndPartitions(topics map[string]TopicInfo) map[string][]int32 {
+// TopicsAndPartitionsForGroup returns a map of topics with a slice containings
+// their partitions.
+func TopicsAndPartitionsForGroup(group map[string]TopicInfo) map[string][]int32 {
 	topicMap := make(map[string][]int32)
-	for topic, info := range topics {
+	for topic, info := range group {
 		topicMap[topic] = make([]int32, 0, len(info.Partitions))
 		for _, partition := range info.Partitions {
 			topicMap[topic] = append(topicMap[topic], partition)
@@ -167,8 +185,8 @@ func sortedMapKeys(m map[string][]int32) []string {
 
 // Rebalance rebalances the consumer group using the striped strategy.
 func (sb *StripedBalancer) Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32 {
-	memberIDs := AllTopicMembers(topics)
-	topicsAndPartitions := AllTopicsAndPartitions(topics)
+	memberIDs := AllMembersForGroup(topics)
+	topicsAndPartitions := TopicsAndPartitionsForGroup(topics)
 	sort.Strings(memberIDs)
 	sortedTopics := sortedMapKeys(topicsAndPartitions)
 	output := make(map[string]map[string][]int32)
