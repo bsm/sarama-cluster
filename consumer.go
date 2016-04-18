@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 // Consumer is a cluster group consumer

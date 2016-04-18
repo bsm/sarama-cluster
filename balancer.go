@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 // Notification events are emitted by the consumers on rebalancing

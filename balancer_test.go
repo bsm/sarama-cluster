@@ -1,10 +1,10 @@
 package cluster
 
 import (
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"gopkg.in/Shopify/sarama.v1"
 )
 
 var _ = Describe("Notification", func() {
