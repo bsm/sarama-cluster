@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -22,7 +23,7 @@ type Consumer struct {
 
 	dying, dead chan none
 
-	consuming     bool
+	consuming     int32
 	errors        chan error
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
@@ -139,9 +140,10 @@ func (c *Consumer) Close() (err error) {
 
 func (c *Consumer) mainLoop() {
 	defer close(c.dead)
+	defer atomic.StoreInt32(&c.consuming, 0)
 
 	for {
-		c.consuming = false
+		atomic.StoreInt32(&c.consuming, 0)
 
 		// Remember previous subscriptions
 		var notification *Notification
@@ -171,7 +173,7 @@ func (c *Consumer) mainLoop() {
 		// Start consuming and comitting offsets
 		cmStop, cmDone := make(chan struct{}), make(chan struct{})
 		go c.cmLoop(cmStop, cmDone)
-		c.consuming = true
+		atomic.StoreInt32(&c.consuming, 1)
 
 		// Update notification with new claims
 		if c.client.config.Group.Return.Notifications {
@@ -192,7 +194,6 @@ func (c *Consumer) mainLoop() {
 			<-cmDone
 			close(hbStop)
 			<-hbDone
-			c.consuming = false
 			return
 		}
 	}
