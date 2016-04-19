@@ -3,7 +3,7 @@ package cluster
 import (
 	"time"
 
-	"gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 // Config extends sarama.Config with Group specific namespace
