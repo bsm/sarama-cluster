@@ -102,7 +102,12 @@ func (c *Consumer) Notifications() <-chan *Notification { return c.notifications
 // message twice, and your processing should ideally be idempotent.
 func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset, metadata)
-	// c.debug("*", "%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
+}
+
+// MarkPartitionOffset marks an offset of the provided topic/partition as processed.
+// See MarkOffset for additional explanation.
+func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
+	c.subs.Fetch(topic, partition).MarkOffset(offset, metadata)
 }
 
 // Subscriptions returns the consumed topics and partitions
@@ -283,7 +288,6 @@ func (c *Consumer) release() (err error) {
 	}
 
 	// Clear subscriptions
-	// c.debug("$", "")
 	c.subs.Clear()
 
 	return
@@ -312,7 +316,6 @@ func (c *Consumer) heartbeat() error {
 // Performs a rebalance, part of the mainLoop()
 func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
-	// c.debug("^", "")
 
 	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
 		return nil, err
@@ -535,7 +538,6 @@ func (c *Consumer) leaveGroup() error {
 
 func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
-	// c.debug(">", "%s/%d/%d", topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
 	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
@@ -565,7 +567,6 @@ func (c *Consumer) commitOffsets() error {
 	var blocks int
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
-		// c.debug("+", "%s/%d/%d, dirty: %v", tp.Topic, tp.Partition, state.Info.Offset, state.Dirty)
 		if state.Dirty {
 			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
 			blocks++
@@ -590,7 +591,6 @@ func (c *Consumer) commitOffsets() error {
 			if kerr != sarama.ErrNoError {
 				err = kerr
 			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				// c.debug("=", "%s/%d/%d", topic, partition, state.Info.Offset)
 				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
 			}
 		}
@@ -607,9 +607,3 @@ func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	}
 	return err
 }
-
-// --------------------------------------------------------------------
-
-// func (c *Consumer) debug(sign string, format string, argv ...interface{}) {
-// 	fmt.Printf("%s %s %s\n", sign, c.consumerID, fmt.Sprintf(format, argv...))
-// }
