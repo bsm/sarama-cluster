@@ -3,9 +3,10 @@ package cluster
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 // Consumer is a cluster group consumer
@@ -23,11 +24,12 @@ type Consumer struct {
 
 	dying, dead chan none
 
-	consuming     bool
-	consumingLock sync.Mutex
+	consuming     int32
 	errors        chan error
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
+
+	commitMu sync.Mutex
 }
 
 // NewConsumerFromClient initializes a new consumer from an existing client
@@ -103,12 +105,65 @@ func (c *Consumer) Notifications() <-chan *Notification { return c.notifications
 // message twice, and your processing should ideally be idempotent.
 func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset, metadata)
-	// c.debug("*", "%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
+}
+
+// MarkPartitionOffset marks an offset of the provided topic/partition as processed.
+// See MarkOffset for additional explanation.
+func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
+	c.subs.Fetch(topic, partition).MarkOffset(offset, metadata)
 }
 
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
+}
+
+// CommitOffsets manually commits marked offsets
+func (c *Consumer) CommitOffsets() error {
+	c.commitMu.Lock()
+	defer c.commitMu.Unlock()
+
+	req := &sarama.OffsetCommitRequest{
+		Version:                 2,
+		ConsumerGroup:           c.groupID,
+		ConsumerGroupGeneration: c.generationID,
+		ConsumerID:              c.memberID,
+		RetentionTime:           -1,
+	}
+
+	var dirty bool
+	snap := c.subs.Snapshot()
+	for tp, state := range snap {
+		if state.Dirty {
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+			dirty = true
+		}
+	}
+	if !dirty {
+		return nil
+	}
+
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return err
+	}
+
+	resp, err := broker.CommitOffset(req)
+	if err != nil {
+		return err
+	}
+
+	for topic, perrs := range resp.Errors {
+		for partition, kerr := range perrs {
+			if kerr != sarama.ErrNoError {
+				err = kerr
+			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
+			}
+		}
+	}
+
+	return err
 }
 
 // Close safely closes the consumer and releases all resources
@@ -139,23 +194,12 @@ func (c *Consumer) Close() (err error) {
 	return
 }
 
-func (c *Consumer) isConsuming() bool {
-	c.consumingLock.Lock()
-	defer c.consumingLock.Unlock()
-	return c.consuming
-}
-
-func (c *Consumer) setConsuming(consuming bool) {
-	c.consumingLock.Lock()
-	c.consuming = consuming
-	c.consumingLock.Unlock()
-}
-
 func (c *Consumer) mainLoop() {
 	defer close(c.dead)
+	defer atomic.StoreInt32(&c.consuming, 0)
 
 	for {
-		c.setConsuming(false)
+		atomic.StoreInt32(&c.consuming, 0)
 
 		// Remember previous subscriptions
 		var notification *Notification
@@ -185,7 +229,7 @@ func (c *Consumer) mainLoop() {
 		// Start consuming and comitting offsets
 		cmStop, cmDone := make(chan struct{}), make(chan struct{})
 		go c.cmLoop(cmStop, cmDone)
-		c.setConsuming(true)
+		atomic.StoreInt32(&c.consuming, 1)
 
 		// Update notification with new claims
 		if c.client.config.Group.Return.Notifications {
@@ -206,7 +250,6 @@ func (c *Consumer) mainLoop() {
 			<-cmDone
 			close(hbStop)
 			<-hbDone
-			c.setConsuming(false)
 			return
 		}
 	}
@@ -296,7 +339,6 @@ func (c *Consumer) release() (err error) {
 	}
 
 	// Clear subscriptions
-	// c.debug("$", "")
 	c.subs.Clear()
 
 	return
@@ -325,7 +367,6 @@ func (c *Consumer) heartbeat() error {
 // Performs a rebalance, part of the mainLoop()
 func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
-	// c.debug("^", "")
 
 	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
 		return nil, err
@@ -547,7 +588,6 @@ func (c *Consumer) leaveGroup() error {
 
 func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
-	// c.debug(">", "%s/%d/%d", topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
 	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
@@ -564,64 +604,11 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	return nil
 }
 
-// Commits offsets for all subscriptions
-func (c *Consumer) commitOffsets() error {
-	req := &sarama.OffsetCommitRequest{
-		Version:                 2,
-		ConsumerGroup:           c.groupID,
-		ConsumerGroupGeneration: c.generationID,
-		ConsumerID:              c.memberID,
-		RetentionTime:           -1,
-	}
-
-	var blocks int
-	snap := c.subs.Snapshot()
-	for tp, state := range snap {
-		// c.debug("+", "%s/%d/%d, dirty: %v", tp.Topic, tp.Partition, state.Info.Offset, state.Dirty)
-		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
-			blocks++
-		}
-	}
-	if blocks == 0 {
-		return nil
-	}
-
-	broker, err := c.client.Coordinator(c.groupID)
-	if err != nil {
-		return err
-	}
-
-	resp, err := broker.CommitOffset(req)
-	if err != nil {
-		return err
-	}
-
-	for topic, perrs := range resp.Errors {
-		for partition, kerr := range perrs {
-			if kerr != sarama.ErrNoError {
-				err = kerr
-			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				// c.debug("=", "%s/%d/%d", topic, partition, state.Info.Offset)
-				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
-			}
-		}
-	}
-
-	return err
-}
-
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
-	err := c.commitOffsets()
+	err := c.CommitOffsets()
 	if err != nil && retries > 0 && c.subs.HasDirty() {
 		_ = c.client.RefreshCoordinator(c.groupID)
 		return c.commitOffsetsWithRetry(retries - 1)
 	}
 	return err
 }
-
-// --------------------------------------------------------------------
-
-// func (c *Consumer) debug(sign string, format string, argv ...interface{}) {
-// 	fmt.Printf("%s %s %s\n", sign, c.consumerID, fmt.Sprintf(format, argv...))
-// }

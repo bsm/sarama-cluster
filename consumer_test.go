@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -49,19 +50,22 @@ var _ = Describe("Consumer", func() {
 	}
 
 	It("should init and share", func() {
+		// start CS1
 		cs1, err := newConsumer(testGroup)
 		Expect(err).NotTo(HaveOccurred())
-		defer cs1.Close()
 
+		// CS1 should consume all 8 partitions
 		subscriptionsOf(cs1).Should(Equal(map[string][]int32{
 			"topic-a": {0, 1, 2, 3},
 			"topic-b": {0, 1, 2, 3},
 		}))
 
+		// start CS2
 		cs2, err := newConsumer(testGroup)
 		Expect(err).NotTo(HaveOccurred())
 		defer cs2.Close()
 
+		// CS1 and CS2 should consume 4 partitions each
 		subscriptionsOf(cs1).Should(HaveLen(2))
 		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
 		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
@@ -69,6 +73,13 @@ var _ = Describe("Consumer", func() {
 		subscriptionsOf(cs2).Should(HaveLen(2))
 		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
 		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+
+		// shutdown CS1, now CS2 should consume all 8 partitions
+		Expect(cs1.Close()).NotTo(HaveOccurred())
+		subscriptionsOf(cs2).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3},
+			"topic-b": {0, 1, 2, 3},
+		}))
 	})
 
 	It("should allow more consumers than partitions", func() {
@@ -96,7 +107,7 @@ var _ = Describe("Consumer", func() {
 		defer cs5.Close()
 
 		// wait for rebalance, make sure no errors occurred
-		Eventually(func() bool { return cs5.isConsuming() }, "10s", "100ms").Should(BeTrue())
+		Eventually(func() bool { return atomic.LoadInt32(&cs5.consuming) == 1 }, "10s", "100ms").Should(BeTrue())
 		time.Sleep(time.Second)
 		Expect(cs1.Errors()).ShouldNot(Receive())
 		Expect(cs2.Errors()).ShouldNot(Receive())
@@ -106,7 +117,7 @@ var _ = Describe("Consumer", func() {
 
 		// close 4th, make sure the 5th takes over
 		cs4.Close()
-		Eventually(func() bool { return cs4.isConsuming() }, "10s", "100ms").Should(BeFalse())
+		Eventually(func() bool { return atomic.LoadInt32(&cs4.consuming) == 1 }, "10s", "100ms").Should(BeFalse())
 		subscriptionsOf(cs4).Should(BeEmpty())
 		subscriptionsOf(cs5).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
 
@@ -116,6 +127,26 @@ var _ = Describe("Consumer", func() {
 		Expect(cs3.Errors()).ShouldNot(Receive())
 		Expect(cs4.Errors()).ShouldNot(Receive())
 		Expect(cs5.Errors()).ShouldNot(Receive())
+	})
+
+	It("should support manual mark/commit", func() {
+		cs, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+
+		subscriptionsOf(cs).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3}},
+		))
+
+		cs.MarkPartitionOffset("topic-a", 1, 3, "")
+		cs.MarkPartitionOffset("topic-a", 2, 4, "")
+		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
+
+		offsets, err := cs.fetchOffsets(cs.Subscriptions())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offsets).To(Equal(map[string]map[int32]offsetInfo{
+			"topic-a": {0: {Offset: -1}, 1: {Offset: 3}, 2: {Offset: 4}, 3: {Offset: -1}},
+		}))
 	})
 
 	It("should consume/commit/resume", func() {

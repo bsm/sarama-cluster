@@ -1,10 +1,10 @@
 package cluster
 
 import (
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"gopkg.in/Shopify/sarama.v1"
 )
 
 var _ = Describe("Notification", func() {
@@ -58,7 +58,7 @@ var _ = Describe("balancer", func() {
 	})
 
 	It("should rebalance using the range strategy", func() {
-		rb := &RangeBalancer{}
+		rb := rangeBalancer{}
 		Expect(rb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
 			"consumerA": {"topic1": {0, 1}, "topic2": {0, 1, 2}},
 			"consumerB": {"topic1": {2, 3}, "topic3": {0, 1}},
@@ -66,7 +66,7 @@ var _ = Describe("balancer", func() {
 	})
 
 	It("should rebalance using the round robin strategy", func() {
-		rrb := &RoundRobinBalancer{}
+		rrb := roundRobinBalancer{}
 		Expect(rrb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
 			"consumerA": {"topic1": {0, 2}, "topic2": {0, 1, 2}},
 			"consumerB": {"topic1": {1, 3}, "topic3": {0, 1}},
@@ -74,7 +74,7 @@ var _ = Describe("balancer", func() {
 	})
 
 	It("should rebalance using the striped strategy", func() {
-		sb := &StripedBalancer{}
+		sb := stripedBalancer{}
 		Expect(sb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
 			"consumerA": {"topic1": {0, 2}, "topic2": {0, 2}, "topic3": {1}},
 			"consumerB": {"topic1": {1, 3}, "topic2": {1}, "topic3": {0}},
@@ -124,13 +124,24 @@ var _ = Describe("Striped balancer", func() {
 	})
 })
 
-var _ = Describe("topicInfo", func() {
+func reduceToSingleTopic(membersAndTopicPartitions map[string]map[string][]int32) map[string][]int32 {
+	ret := make(map[string][]int32)
+	for memberID, topicsAndPartitions := range membersAndTopicPartitions {
+		ret[memberID] = make([]int32, 0)
+		for _, partitions := range topicsAndPartitions {
+			ret[memberID] = append(ret[memberID], partitions...)
+		}
+	}
+	return ret
+}
+
+var _ = Describe("TopicInfo", func() {
 
 	DescribeTable("Ranges",
 		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			rb := &RangeBalancer{}
-			info := TopicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			Expect(rb.rebalanceTopicInfo(info)).To(Equal(expected))
+			rb := rangeBalancer{}
+			info := TopicInfoGroup{"T1": TopicInfo{MemberIDs: memberIDs, Partitions: partitions}}
+			Expect(reduceToSingleTopic(rb.Rebalance(info))).To(Equal(expected))
 		},
 
 		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{
@@ -155,9 +166,9 @@ var _ = Describe("topicInfo", func() {
 
 	DescribeTable("RoundRobin",
 		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			info := TopicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			rrb := &RoundRobinBalancer{}
-			Expect(rrb.rebalanceTopicInfo(info)).To(Equal(expected))
+			info := TopicInfoGroup{"T1": TopicInfo{MemberIDs: memberIDs, Partitions: partitions}}
+			rrb := roundRobinBalancer{}
+			Expect(reduceToSingleTopic(rrb.Rebalance(info))).To(Equal(expected))
 		},
 
 		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{

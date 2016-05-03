@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 // Notification events are emitted by the consumers on rebalancing
@@ -43,9 +43,9 @@ func (n *Notification) claim(current map[string][]int32) {
 
 var (
 	balancerStrategies map[Strategy]Balancer = map[Strategy]Balancer{
-		StrategyRange:      &RangeBalancer{},
-		StrategyRoundRobin: &RoundRobinBalancer{},
-		StrategyStriped:    &StripedBalancer{},
+		StrategyRange:      rangeBalancer{},
+		StrategyRoundRobin: roundRobinBalancer{},
+		StrategyStriped:    stripedBalancer{},
 	}
 )
 
@@ -53,6 +53,43 @@ var (
 func RegisterBalancerStrategy(name Strategy, b Balancer) {
 	balancerStrategies[name] = b
 }
+
+// TopicInfoGroup represents a collection of topics and their consumers and partitions.
+type TopicInfoGroup map[string]TopicInfo
+
+// MemberIDs returns the unique set of member IDs in the TopicInfoGroup
+func (ti TopicInfoGroup) MemberIDs() []string {
+	ret := make([]string, 0, len(ti))
+	seen := make(map[string]struct{})
+
+	for _, topicInfo := range ti {
+		for _, memberID := range topicInfo.MemberIDs {
+			if _, ok := seen[memberID]; !ok {
+				ret = append(ret, memberID)
+				seen[memberID] = struct{}{}
+			}
+		}
+	}
+
+	return ret
+}
+
+// Partitions returns a map of topics with their respective partitions
+func (ti TopicInfoGroup) Partitions() map[string][]int32 {
+	ret := make(map[string][]int32)
+	for topic, topicInfo := range ti {
+		ret[topic] = topicInfo.Partitions
+	}
+	return ret
+}
+
+// --------------------------------------------------------------------
+
+type partitionSorter []int32
+
+func (ps partitionSorter) Len() int           { return len(ps) }
+func (ps partitionSorter) Swap(i, j int)      { ps[i], ps[j] = ps[j], ps[i] }
+func (ps partitionSorter) Less(i, j int) bool { return ps[i] < ps[j] }
 
 // --------------------------------------------------------------------
 
@@ -77,7 +114,7 @@ type Balancer interface {
 	//   Topic2: [2]
 	// Consumer3:
 	//   Topic2: [0, 3]
-	Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32
+	Rebalance(topics TopicInfoGroup) map[string]map[string][]int32
 }
 
 // TopicInfo contains the partitions a topic contains and the member IDs subscribed to it.
@@ -88,55 +125,51 @@ type TopicInfo struct {
 }
 
 // RangeBalancer implements StrategyRange, balancing partitions in ranges to consumers.
-type RangeBalancer struct{}
+type rangeBalancer struct{}
 
 // Rebalance rebalances the consumer group using the range strategy.
-func (rb *RangeBalancer) Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32 {
-	return rebalanceWithStrategy(topics, rb.rebalanceTopicInfo)
-}
+func (rb rangeBalancer) Rebalance(topics TopicInfoGroup) map[string]map[string][]int32 {
+	return rebalanceWithStrategy(topics, func(info TopicInfo) map[string][]int32 {
+		sort.Strings(info.MemberIDs)
 
-func (rb *RangeBalancer) rebalanceTopicInfo(info TopicInfo) map[string][]int32 {
-	sort.Strings(info.MemberIDs)
+		mlen := len(info.MemberIDs)
+		plen := len(info.Partitions)
+		res := make(map[string][]int32, mlen)
 
-	mlen := len(info.MemberIDs)
-	plen := len(info.Partitions)
-	res := make(map[string][]int32, mlen)
-
-	for pos, memberID := range info.MemberIDs {
-		n, i := float64(plen)/float64(mlen), float64(pos)
-		min := int(math.Floor(i*n + 0.5))
-		max := int(math.Floor((i+1)*n + 0.5))
-		sub := info.Partitions[min:max]
-		if len(sub) > 0 {
-			res[memberID] = sub
+		for pos, memberID := range info.MemberIDs {
+			n, i := float64(plen)/float64(mlen), float64(pos)
+			min := int(math.Floor(i*n + 0.5))
+			max := int(math.Floor((i+1)*n + 0.5))
+			sub := info.Partitions[min:max]
+			if len(sub) > 0 {
+				res[memberID] = sub
+			}
 		}
-	}
-	return res
+		return res
+	})
 }
 
 // --------------------------------------------------------------------
 
 // RoundRobinBalancer implements StrategyRoundRobin, balancing partitions alternating over consumers.
-type RoundRobinBalancer struct{}
+type roundRobinBalancer struct{}
 
 // Rebalance rebalances the consumer group using the round robin strategy.
-func (rr *RoundRobinBalancer) Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32 {
-	return rebalanceWithStrategy(topics, rr.rebalanceTopicInfo)
+func (rr roundRobinBalancer) Rebalance(topics TopicInfoGroup) map[string]map[string][]int32 {
+	return rebalanceWithStrategy(topics, func(info TopicInfo) map[string][]int32 {
+		sort.Strings(info.MemberIDs)
+
+		mlen := len(info.MemberIDs)
+		res := make(map[string][]int32, mlen)
+		for i, pnum := range info.Partitions {
+			memberID := info.MemberIDs[i%mlen]
+			res[memberID] = append(res[memberID], pnum)
+		}
+		return res
+	})
 }
 
-func (rr *RoundRobinBalancer) rebalanceTopicInfo(info TopicInfo) map[string][]int32 {
-	sort.Strings(info.MemberIDs)
-
-	mlen := len(info.MemberIDs)
-	res := make(map[string][]int32, mlen)
-	for i, pnum := range info.Partitions {
-		memberID := info.MemberIDs[i%mlen]
-		res[memberID] = append(res[memberID], pnum)
-	}
-	return res
-}
-
-func rebalanceWithStrategy(topics map[string]TopicInfo,
+func rebalanceWithStrategy(topics TopicInfoGroup,
 	rebalanceFunc func(TopicInfo) map[string][]int32,
 ) map[string]map[string][]int32 {
 
@@ -156,62 +189,30 @@ func rebalanceWithStrategy(topics map[string]TopicInfo,
 
 // StripedRebalancer implements StrategyStriped, balancing topics fairly
 // across consumers
-type StripedBalancer struct{}
-
-// AllMembersForGroup the unique set of group members for the given group info map.
-func AllMembersForGroup(group map[string]TopicInfo) []string {
-	memberMap := make(map[string]bool)
-
-	for _, topic := range group {
-		for _, memberID := range topic.MemberIDs {
-			memberMap[memberID] = true
-		}
-	}
-
-	members := make([]string, 0, len(memberMap))
-	for memberID, _ := range memberMap {
-		members = append(members, memberID)
-	}
-	return members
-}
-
-// TopicsAndPartitionsForGroup returns a map of topics with a slice containings
-// their partitions.
-func TopicsAndPartitionsForGroup(group map[string]TopicInfo) map[string][]int32 {
-	topicMap := make(map[string][]int32)
-	for topic, info := range group {
-		topicMap[topic] = make([]int32, 0, len(info.Partitions))
-		for _, partition := range info.Partitions {
-			topicMap[topic] = append(topicMap[topic], partition)
-		}
-	}
-	return topicMap
-}
-
-func sortedMapKeys(m map[string][]int32) []string {
-	ret := make([]string, 0, len(m))
-	for key, _ := range m {
-		ret = append(ret, key)
-	}
-
-	sort.Strings(ret)
-	return ret
-}
+type stripedBalancer struct{}
 
 // Rebalance rebalances the consumer group using the striped strategy.
-func (sb *StripedBalancer) Rebalance(topics map[string]TopicInfo) map[string]map[string][]int32 {
-	memberIDs := AllMembersForGroup(topics)
-	topicsAndPartitions := TopicsAndPartitionsForGroup(topics)
+func (sb stripedBalancer) Rebalance(topics TopicInfoGroup) map[string]map[string][]int32 {
+	memberIDs := topics.MemberIDs()
+	topicsAndPartitions := topics.Partitions()
 	sort.Strings(memberIDs)
-	sortedTopics := sortedMapKeys(topicsAndPartitions)
+
+	sortedTopics := make([]string, 0, len(topics))
+	for key, _ := range topics {
+		sortedTopics = append(sortedTopics, key)
+	}
+
+	sort.Strings(sortedTopics)
+
 	output := make(map[string]map[string][]int32)
 
 	memberIdx := 0
 	memLen := len(memberIDs)
 	for _, topic := range sortedTopics {
 		partitions := topicsAndPartitions[topic]
-		for i := 0; i < len(partitions); i++ {
-			partition := partitions[i]
+		sort.Sort(partitionSorter(partitions))
+		for _, partition := range partitions {
+			partition := partition
 			memberID := memberIDs[memberIdx%memLen]
 			if _, ok := output[memberID]; !ok {
 				output[memberID] = make(map[string][]int32)
@@ -228,7 +229,7 @@ func (sb *StripedBalancer) Rebalance(topics map[string]TopicInfo) map[string]map
 
 type balancer struct {
 	client sarama.Client
-	topics map[string]TopicInfo
+	topics TopicInfoGroup
 }
 
 func newBalancerFromMeta(client sarama.Client, members map[string]sarama.ConsumerGroupMemberMetadata) (*balancer, error) {
@@ -246,7 +247,7 @@ func newBalancerFromMeta(client sarama.Client, members map[string]sarama.Consume
 func newBalancer(client sarama.Client) *balancer {
 	return &balancer{
 		client: client,
-		topics: make(map[string]TopicInfo),
+		topics: make(TopicInfoGroup),
 	}
 }
 
