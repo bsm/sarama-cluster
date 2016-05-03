@@ -50,19 +50,22 @@ var _ = Describe("Consumer", func() {
 	}
 
 	It("should init and share", func() {
+		// start CS1
 		cs1, err := newConsumer(testGroup)
 		Expect(err).NotTo(HaveOccurred())
-		defer cs1.Close()
 
+		// CS1 should consume all 8 partitions
 		subscriptionsOf(cs1).Should(Equal(map[string][]int32{
 			"topic-a": {0, 1, 2, 3},
 			"topic-b": {0, 1, 2, 3},
 		}))
 
+		// start CS2
 		cs2, err := newConsumer(testGroup)
 		Expect(err).NotTo(HaveOccurred())
 		defer cs2.Close()
 
+		// CS1 and CS2 should consume 4 partitions each
 		subscriptionsOf(cs1).Should(HaveLen(2))
 		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
 		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
@@ -70,6 +73,13 @@ var _ = Describe("Consumer", func() {
 		subscriptionsOf(cs2).Should(HaveLen(2))
 		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-a", HaveLen(2)))
 		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-b", HaveLen(2)))
+
+		// shutdown CS1, now CS2 should consume all 8 partitions
+		Expect(cs1.Close()).NotTo(HaveOccurred())
+		subscriptionsOf(cs2).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3},
+			"topic-b": {0, 1, 2, 3},
+		}))
 	})
 
 	It("should allow more consumers than partitions", func() {
