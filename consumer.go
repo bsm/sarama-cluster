@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,8 @@ type Consumer struct {
 	errors        chan error
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
+
+	commitMu sync.Mutex
 }
 
 // NewConsumerFromClient initializes a new consumer from an existing client
@@ -113,6 +116,54 @@ func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
+}
+
+// CommitOffsets manually commits marked offsets
+func (c *Consumer) CommitOffsets() error {
+	c.commitMu.Lock()
+	defer c.commitMu.Unlock()
+
+	req := &sarama.OffsetCommitRequest{
+		Version:                 2,
+		ConsumerGroup:           c.groupID,
+		ConsumerGroupGeneration: c.generationID,
+		ConsumerID:              c.memberID,
+		RetentionTime:           -1,
+	}
+
+	var dirty bool
+	snap := c.subs.Snapshot()
+	for tp, state := range snap {
+		if state.Dirty {
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+			dirty = true
+		}
+	}
+	if !dirty {
+		return nil
+	}
+
+	broker, err := c.client.Coordinator(c.groupID)
+	if err != nil {
+		return err
+	}
+
+	resp, err := broker.CommitOffset(req)
+	if err != nil {
+		return err
+	}
+
+	for topic, perrs := range resp.Errors {
+		for partition, kerr := range perrs {
+			if kerr != sarama.ErrNoError {
+				err = kerr
+			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
+			}
+		}
+	}
+
+	return err
 }
 
 // Close safely closes the consumer and releases all resources
@@ -554,53 +605,8 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	return nil
 }
 
-// Commits offsets for all subscriptions
-func (c *Consumer) commitOffsets() error {
-	req := &sarama.OffsetCommitRequest{
-		Version:                 2,
-		ConsumerGroup:           c.groupID,
-		ConsumerGroupGeneration: c.generationID,
-		ConsumerID:              c.memberID,
-		RetentionTime:           -1,
-	}
-
-	var blocks int
-	snap := c.subs.Snapshot()
-	for tp, state := range snap {
-		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
-			blocks++
-		}
-	}
-	if blocks == 0 {
-		return nil
-	}
-
-	broker, err := c.client.Coordinator(c.groupID)
-	if err != nil {
-		return err
-	}
-
-	resp, err := broker.CommitOffset(req)
-	if err != nil {
-		return err
-	}
-
-	for topic, perrs := range resp.Errors {
-		for partition, kerr := range perrs {
-			if kerr != sarama.ErrNoError {
-				err = kerr
-			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
-			}
-		}
-	}
-
-	return err
-}
-
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
-	err := c.commitOffsets()
+	err := c.CommitOffsets()
 	if err != nil && retries > 0 && c.subs.HasDirty() {
 		_ = c.client.RefreshCoordinator(c.groupID)
 		return c.commitOffsetsWithRetry(retries - 1)

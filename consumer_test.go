@@ -119,6 +119,26 @@ var _ = Describe("Consumer", func() {
 		Expect(cs5.Errors()).ShouldNot(Receive())
 	})
 
+	It("should support manual mark/commit", func() {
+		cs, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+
+		subscriptionsOf(cs).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3}},
+		))
+
+		cs.MarkPartitionOffset("topic-a", 1, 3, "")
+		cs.MarkPartitionOffset("topic-a", 2, 4, "")
+		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
+
+		offsets, err := cs.fetchOffsets(cs.Subscriptions())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offsets).To(Equal(map[string]map[int32]offsetInfo{
+			"topic-a": {0: {Offset: -1}, 1: {Offset: 3}, 2: {Offset: 4}, 3: {Offset: -1}},
+		}))
+	})
+
 	It("should consume/commit/resume", func() {
 		acc := make(chan *testConsumerMessage, 150000)
 		consume("A", "fuzzing", 2000, acc)
