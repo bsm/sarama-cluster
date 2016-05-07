@@ -14,6 +14,7 @@ var _ = Describe("Consumer", func() {
 	var newConsumer = func(group string) (*Consumer, error) {
 		config := NewConfig()
 		config.Consumer.Return.Errors = true
+		config.Consumer.MaxProcessingTime = 2 * time.Millisecond
 		return NewConsumer(testKafkaAddrs, group, testTopics, config)
 	}
 

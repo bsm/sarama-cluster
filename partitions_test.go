@@ -23,8 +23,8 @@ var _ = Describe("partitionConsumer", func() {
 
 	It("should set state", func() {
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2000, "m3ta"},
-			Dirty: false,
+			Processed: offsetInfo{2000, "m3ta"},
+			Dirty:     false,
 		}))
 	})
 
@@ -35,47 +35,70 @@ var _ = Describe("partitionConsumer", func() {
 		close(pc.dead)
 
 		state := pc.State()
-		Expect(state.Info.Offset).To(Equal(int64(-1)))
-		Expect(state.Info.Metadata).To(Equal("m3ta"))
+		Expect(state.Processed.Offset).To(Equal(int64(-1)))
+		Expect(state.Processed.Metadata).To(Equal("m3ta"))
 	})
 
 	It("should update state", func() {
-		subject.MarkOffset(2001, "met@") // should set state
+		subject.MarkConsumed(2002)
+		subject.MarkProcessed(2001, "met@") // should set state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2001, "met@"},
-			Dirty: true,
+			Consumed:  2002,
+			Processed: offsetInfo{2001, "met@"},
+			Dirty:     true,
 		}))
 
 		subject.MarkCommitted(2001) // should reset dirty status
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2001, "met@"},
-			Dirty: false,
+			Consumed:  2002,
+			Processed: offsetInfo{2001, "met@"},
+			Dirty:     false,
 		}))
 
-		subject.MarkOffset(2001, "me7a") // should not update state
+		subject.MarkProcessed(2001, "me7a") // should not update state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2001, "met@"},
-			Dirty: false,
+			Consumed:  2002,
+			Processed: offsetInfo{2001, "met@"},
+			Dirty:     false,
 		}))
 
-		subject.MarkOffset(2002, "me7a") // should bump state
+		subject.MarkProcessed(2002, "me7a") // should bump state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2002, "me7a"},
-			Dirty: true,
+			Consumed:  2002,
+			Processed: offsetInfo{2002, "me7a"},
+			Dirty:     true,
 		}))
 
 		subject.MarkCommitted(2001) // should not unset state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2002, "me7a"},
-			Dirty: true,
+			Consumed:  2002,
+			Processed: offsetInfo{2002, "me7a"},
+			Dirty:     true,
 		}))
+
+		subject.MarkConsumed(2003) // should increment consumed status
+		Expect(subject.State()).To(Equal(partitionState{
+			Consumed:  2003,
+			Processed: offsetInfo{2002, "me7a"},
+			Dirty:     true,
+		}))
+	})
+
+	It("should check if pending", func() {
+		Expect(subject.State().Pending()).To(Equal(int64(0)))
+		subject.MarkConsumed(2001)
+		Expect(subject.State().Pending()).To(Equal(int64(1)))
+		subject.MarkProcessed(2001, "")
+		Expect(subject.State().Pending()).To(Equal(int64(0)))
+		subject.MarkConsumed(2002)
+		Expect(subject.State().Pending()).To(Equal(int64(1)))
 	})
 
 	It("should not fail when nil", func() {
 		blank := (*partitionConsumer)(nil)
 		Expect(func() {
 			_ = blank.State()
-			blank.MarkOffset(2001, "met@")
+			blank.MarkProcessed(2001, "met@")
 			blank.MarkCommitted(2001)
 		}).NotTo(Panic())
 	})
@@ -122,12 +145,15 @@ var _ = Describe("partitionMap", func() {
 
 		subject.Store("topic", 0, pc0)
 		subject.Store("topic", 1, pc1)
-		subject.Fetch("topic", 1).MarkOffset(2001, "met@")
+		subject.Fetch("topic", 1).MarkConsumed(2001)
+		subject.Fetch("topic", 1).MarkProcessed(2001, "met@")
+		subject.Fetch("topic", 1).MarkConsumed(2002)
 
 		Expect(subject.Snapshot()).To(Equal(map[topicPartition]partitionState{
-			topicPartition{"topic", 0}: {offsetInfo{2000, "m3ta"}, false},
-			topicPartition{"topic", 1}: {offsetInfo{2001, "met@"}, true},
+			topicPartition{"topic", 0}: {offsetInfo{2000, "m3ta"}, 0, false},
+			topicPartition{"topic", 1}: {offsetInfo{2001, "met@"}, 2002, true},
 		}))
+		Expect(subject.Pending()).To(Equal(int64(1)))
 	})
 
 })

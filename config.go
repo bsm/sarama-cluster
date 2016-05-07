@@ -14,22 +14,26 @@ type Config struct {
 	Group struct {
 		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
 		PartitionStrategy Strategy
-		Offsets           struct {
+
+		Offsets struct {
 			Retry struct {
 				// The numer retries when comitting offsets (defaults to 3).
 				Max int
 			}
 		}
+
 		Session struct {
 			// The allowed session timeout for registered consumers (defaults to 30s).
 			// Must be within the allowed server range.
 			Timeout time.Duration
 		}
+
 		Heartbeat struct {
 			// Interval between each heartbeat (defaults to 3s). It should be no more
 			// than 1/3rd of the Group.Session.Timout setting
 			Interval time.Duration
 		}
+
 		// Return specifies which group channels will be populated. If they are set to true,
 		// you must read from the respective channels to prevent deadlock.
 		Return struct {

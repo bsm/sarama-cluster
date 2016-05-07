@@ -3,6 +3,7 @@ package cluster
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Shopify/sarama"
 )
@@ -31,7 +32,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 
 	return &partitionConsumer{
 		pcm:   pcm,
-		state: partitionState{Info: info},
+		state: partitionState{Processed: info},
 
 		dying: make(chan none),
 		dead:  make(chan none),
@@ -39,24 +40,24 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 }
 
 func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+	defer close(c.dead)
+
 	for {
 		select {
 		case msg := <-c.pcm.Messages():
 			select {
 			case messages <- msg:
+				c.MarkConsumed(msg.Offset)
 			case <-c.dying:
-				close(c.dead)
 				return
 			}
 		case err := <-c.pcm.Errors():
 			select {
 			case errors <- err:
 			case <-c.dying:
-				close(c.dead)
 				return
 			}
 		case <-c.dying:
-			close(c.dead)
 			return
 		}
 	}
@@ -89,27 +90,31 @@ func (c *partitionConsumer) State() partitionState {
 	return state
 }
 
+func (c *partitionConsumer) MarkConsumed(offset int64) {
+	atomic.StoreInt64(&c.state.Consumed, offset)
+}
+
 func (c *partitionConsumer) MarkCommitted(offset int64) {
 	if c == nil {
 		return
 	}
 
 	c.mutex.Lock()
-	if offset == c.state.Info.Offset {
+	if offset == c.state.Processed.Offset {
 		c.state.Dirty = false
 	}
 	c.mutex.Unlock()
 }
 
-func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
+func (c *partitionConsumer) MarkProcessed(offset int64, metadata string) {
 	if c == nil {
 		return
 	}
 
 	c.mutex.Lock()
-	if offset > c.state.Info.Offset {
-		c.state.Info.Offset = offset
-		c.state.Info.Metadata = metadata
+	if offset > c.state.Processed.Offset {
+		c.state.Processed.Offset = offset
+		c.state.Processed.Metadata = metadata
 		c.state.Dirty = true
 	}
 	c.mutex.Unlock()
@@ -118,8 +123,16 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 // --------------------------------------------------------------------
 
 type partitionState struct {
-	Info  offsetInfo
-	Dirty bool
+	Processed offsetInfo
+	Consumed  int64
+	Dirty     bool
+}
+
+func (s partitionState) Pending() int64 {
+	if n := s.Consumed - s.Processed.Offset; n > 0 {
+		return n
+	}
+	return 0
 }
 
 // --------------------------------------------------------------------
@@ -158,6 +171,14 @@ func (m *partitionMap) HasDirty() bool {
 		}
 	}
 	return false
+}
+
+func (m *partitionMap) Pending() int64 {
+	var n int64
+	for _, state := range m.Snapshot() {
+		n += state.Pending()
+	}
+	return n
 }
 
 func (m *partitionMap) Snapshot() map[topicPartition]partitionState {

@@ -104,13 +104,13 @@ func (c *Consumer) Notifications() <-chan *Notification { return c.notifications
 // your application crashes. This means that you may end up processing the same
 // message twice, and your processing should ideally be idempotent.
 func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
-	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset, metadata)
+	c.subs.Fetch(msg.Topic, msg.Partition).MarkProcessed(msg.Offset, metadata)
 }
 
 // MarkPartitionOffset marks an offset of the provided topic/partition as processed.
 // See MarkOffset for additional explanation.
 func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
-	c.subs.Fetch(topic, partition).MarkOffset(offset, metadata)
+	c.subs.Fetch(topic, partition).MarkProcessed(offset, metadata)
 }
 
 // Subscriptions returns the consumed topics and partitions
@@ -135,7 +135,7 @@ func (c *Consumer) CommitOffsets() error {
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
 		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+			req.AddBlock(tp.Topic, tp.Partition, state.Processed.Offset, 0, state.Processed.Metadata)
 			dirty = true
 		}
 	}
@@ -158,7 +158,7 @@ func (c *Consumer) CommitOffsets() error {
 			if kerr != sarama.ErrNoError {
 				err = kerr
 			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Processed.Offset)
 			}
 		}
 	}
@@ -330,8 +330,12 @@ func (c *Consumer) release() (err error) {
 		err = e
 	}
 
-	// Wait for all messages to be processed
-	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
+	// Wait for outstanding messages to be processed
+	timeout := c.client.config.Consumer.MaxProcessingTime * time.Duration(c.subs.Pending())
+	deadline := time.Now().Add(timeout)
+	for c.subs.Pending() > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Commit offsets
 	if e := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); e != nil {
