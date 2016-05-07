@@ -84,7 +84,11 @@ func (c *partitionConsumer) State() partitionState {
 	}
 
 	c.mutex.Lock()
-	state := c.state
+	state := partitionState{
+		Processed: c.state.Processed,
+		Consumed:  atomic.LoadInt64(&c.state.Consumed),
+		Dirty:     c.state.Dirty,
+	}
 	c.mutex.Unlock()
 
 	return state
