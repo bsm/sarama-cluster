@@ -326,9 +326,7 @@ func (c *Consumer) handleError(err error) {
 // Releases the consumer and commits offsets, called from rebalance() and Close()
 func (c *Consumer) release() (err error) {
 	// Stop all consumers, don't stop on errors
-	if e := c.subs.Stop(); e != nil {
-		err = e
-	}
+	c.subs.Stop()
 
 	// Wait for all messages to be processed
 	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
@@ -410,14 +408,28 @@ func (c *Consumer) subscribe(subs map[string][]int32) error {
 	}
 
 	// Create consumers
+	var wait sync.WaitGroup
+	var mu sync.Mutex
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
-			if err := c.createConsumer(topic, partition, offsets[topic][partition]); err != nil {
-				_ = c.release()
-				_ = c.leaveGroup()
-				return err
-			}
+			wait.Add(1)
+			go func(topic string, partition int32) {
+				cerr := c.createConsumer(topic, partition, offsets[topic][partition])
+				if cerr != nil {
+					mu.Lock()
+					err = cerr
+					mu.Unlock()
+				}
+				wait.Done()
+			}(topic, partition)
 		}
+	}
+
+	wait.Wait()
+	if err != nil {
+		c.release()
+		c.leaveGroup()
+		return err
 	}
 	return nil
 }
