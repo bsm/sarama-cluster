@@ -71,9 +71,7 @@ func (c *partitionConsumer) Close() (err error) {
 	close(c.dying)
 	<-c.dead
 
-	if e := c.pcm.Close(); e != nil {
-		err = e
-	}
+	c.pcm.AsyncClose()
 	return
 }
 
@@ -171,23 +169,13 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 	return snap
 }
 
-func (m *partitionMap) Stop() (err error) {
+func (m *partitionMap) Stop() {
 	m.mutex.RLock()
-	size := len(m.data)
-	errs := make(chan error, size)
-	for tp := range m.data {
-		go func(p *partitionConsumer) {
-			errs <- p.Close()
-		}(m.data[tp])
+
+	for _, pcm := range m.data {
+		pcm.Close()
 	}
 	m.mutex.RUnlock()
-
-	for i := 0; i < size; i++ {
-		if e := <-errs; e != nil {
-			err = e
-		}
-	}
-	return
 }
 
 func (m *partitionMap) Clear() {
