@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/fanhattan/sarama"
 )
 
 // Consumer is a cluster group consumer
@@ -23,6 +23,7 @@ type Consumer struct {
 	topics       []string
 
 	dying, dead chan none
+	forceReset  chan bool
 
 	consuming     int32
 	errors        chan error
@@ -48,8 +49,9 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		groupID: groupID,
 		topics:  topics,
 
-		dying: make(chan none),
-		dead:  make(chan none),
+		dying:      make(chan none),
+		dead:       make(chan none),
+		forceReset: make(chan bool),
 
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		messages:      make(chan *sarama.ConsumerMessage),
@@ -111,6 +113,17 @@ func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 // See MarkOffset for additional explanation.
 func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
 	c.subs.Fetch(topic, partition).MarkOffset(offset, metadata)
+}
+
+func (c *Consumer) ResetPartitionOffset(topic string, partition int32, offset int64, metadata string) {
+	pc := c.subs.Fetch(topic, partition)
+	if pc == nil {
+		sarama.Logger.Printf("cluster/consumer %s can not resets offset of topic %s, partition %d. no subscription\n", c.memberID, topic, partition)
+		return
+	}
+	sarama.Logger.Printf("cluster/consumer %s resets offset of topic %s, partition %d\n", c.memberID, topic, partition)
+	pc.ResetOffset(offset, metadata)
+	c.forceReset <- true
 }
 
 // Subscriptions returns the consumed topics and partitions
@@ -274,6 +287,8 @@ func (c *Consumer) hbLoop(stop <-chan struct{}, done chan<- struct{}) {
 				return
 			}
 		case <-stop:
+			return
+		case <-c.forceReset:
 			return
 		}
 	}

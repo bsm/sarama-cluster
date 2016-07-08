@@ -4,7 +4,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/Shopify/sarama"
+	"github.com/fanhattan/sarama"
 )
 
 // Notification events are emitted by the consumers on rebalancing

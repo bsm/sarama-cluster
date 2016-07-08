@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/Shopify/sarama"
+	"github.com/fanhattan/sarama"
 )
 
 type partitionConsumer struct {
@@ -112,6 +112,17 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 		c.state.Info.Metadata = metadata
 		c.state.Dirty = true
 	}
+	c.mutex.Unlock()
+}
+
+func (c *partitionConsumer) ResetOffset(offset int64, metadata string) {
+	if c == nil {
+		return
+	}
+	c.mutex.Lock()
+	c.state.Info.Offset = offset
+	c.state.Info.Metadata = metadata
+	c.state.Dirty = true
 	c.mutex.Unlock()
 }
 
