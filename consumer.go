@@ -52,7 +52,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		dead:  make(chan none),
 
 		errors:        make(chan error, client.config.ChannelBufferSize),
-		messages:      make(chan *sarama.ConsumerMessage, client.config.ChannelBufferSize),
+		messages:      make(chan *sarama.ConsumerMessage),
 		notifications: make(chan *Notification, 1),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
@@ -328,7 +328,7 @@ func (c *Consumer) release() (err error) {
 	// Stop all consumers, don't take care of error of PartitionConsumer closed.
 	c.subs.Stop()
 
-	// Wait for all messages to be processed
+	// Wait for messages to be processed
 	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
 
 	// Commit offsets

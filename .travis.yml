@@ -4,8 +4,9 @@ go:
   - 1.6
   - 1.5
 install:
-  - go get -t ./...
+  - go get -u github.com/Masterminds/glide
+  - glide install
 env:
-  - SCALA_VERSION=2.11 KAFKA_VERSION=0.9.0.1
+  - SCALA_VERSION=2.11 KAFKA_VERSION=0.9.0.1 GO15VENDOREXPERIMENT=1
 script:
   - make default test-race

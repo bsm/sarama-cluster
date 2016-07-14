@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Shopify/sarama"
-	"gopkg.in/bsm/sarama-cluster.v2"
+	"github.com/bsm/sarama-cluster"
 )
 
 var (
