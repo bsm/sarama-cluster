@@ -42,18 +42,22 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 	for {
 		select {
 		case msg := <-c.pcm.Messages():
-			select {
-			case messages <- msg:
-			case <-c.dying:
-				close(c.dead)
-				return
+			if msg != nil {
+				select {
+				case messages <- msg:
+				case <-c.dying:
+					close(c.dead)
+					return
+				}
 			}
 		case err := <-c.pcm.Errors():
-			select {
-			case errors <- err:
-			case <-c.dying:
-				close(c.dead)
-				return
+			if err != nil {
+				select {
+				case errors <- err:
+				case <-c.dying:
+					close(c.dead)
+					return
+				}
 			}
 		case <-c.dying:
 			close(c.dead)
