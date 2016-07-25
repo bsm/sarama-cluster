@@ -270,7 +270,7 @@ func (c *Consumer) hbLoop(stop <-chan struct{}, done chan<- struct{}) {
 			case sarama.ErrNotCoordinatorForConsumer, sarama.ErrRebalanceInProgress:
 				return
 			default:
-				c.handleError(err)
+				c.handleError(&Error{Ctx: "heartbeat", error: err})
 				return
 			}
 		case <-stop:
@@ -290,7 +290,7 @@ func (c *Consumer) cmLoop(stop <-chan struct{}, done chan<- struct{}) {
 		select {
 		case <-ticker.C:
 			if err := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); err != nil {
-				c.handleError(err)
+				c.handleError(&Error{Ctx: "commit", error: err})
 				return
 			}
 		case <-stop:
@@ -306,20 +306,20 @@ func (c *Consumer) rebalanceError(err error, notification *Notification) {
 	switch err {
 	case sarama.ErrRebalanceInProgress:
 	default:
-		c.handleError(err)
+		c.handleError(&Error{Ctx: "rebalance", error: err})
 	}
 	time.Sleep(c.client.config.Metadata.Retry.Backoff)
 }
 
-func (c *Consumer) handleError(err error) {
+func (c *Consumer) handleError(e *Error) {
 	if c.client.config.Consumer.Return.Errors {
 		select {
-		case c.errors <- err:
+		case c.errors <- e:
 		case <-c.dying:
 			return
 		}
 	} else {
-		sarama.Logger.Println(err)
+		sarama.Logger.Printf("%s error: %s\n", e.Ctx, e.Error())
 	}
 }
 
