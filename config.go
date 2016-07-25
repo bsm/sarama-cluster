@@ -6,7 +6,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-var minVersion = sarama.V0_9_0_0
+// var minVersion = sarama.V0_9_0_0
 
 // Config extends sarama.Config with Group specific namespace
 type Config struct {
@@ -51,7 +51,7 @@ func NewConfig() *Config {
 	c.Group.Offsets.Retry.Max = 3
 	c.Group.Session.Timeout = 30 * time.Second
 	c.Group.Heartbeat.Interval = 3 * time.Second
-	c.Config.Version = minVersion
+	// c.Config.Version = minVersion
 	return c
 }
 
@@ -67,10 +67,10 @@ func (c *Config) Validate() error {
 	if c.Group.PartitionStrategy != StrategyRange && c.Group.PartitionStrategy != StrategyRoundRobin {
 		sarama.Logger.Println("Group.PartitionStrategy is not supported; range will be assumed.")
 	}
-	if !c.Version.IsAtLeast(minVersion) {
-		sarama.Logger.Println("Version is not supported; 0.9. will be assumed.")
-		c.Version = minVersion
-	}
+	// if !c.Version.IsAtLeast(minVersion) {
+	// 	sarama.Logger.Println("Version is not supported; 0.9. will be assumed.")
+	// 	c.Version = minVersion
+	// }
 	if err := c.Config.Validate(); err != nil {
 		return err
 	}

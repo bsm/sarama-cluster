@@ -1,5 +1,5 @@
 hash: 76e38c5c70ece28550aacde5afd4ea321c4986b615e0bd145f899664ffc8888b
-updated: 2016-06-25T09:28:02.362447538+01:00
+updated: 2016-07-25T11:06:46.601987242+01:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
@@ -18,6 +18,12 @@ imports:
 - name: github.com/Shopify/sarama
   version: 38d579a708d2f87dd4e35342241048e361d1e66a
 testImports:
+- name: github.com/golang/protobuf
+  version: 874264fbbb43f4d91e999fecb4b40143ed611400
+  subpackages:
+  - proto
+  - proto/testdata
+  - ptypes/any
 - name: github.com/onsi/ginkgo
   version: 059cec02d342bab423425a99b191186a03255e9e
   subpackages:
@@ -32,10 +38,13 @@ testImports:
   - reporters
   - reporters/stenographer
   - types
-  - internal/containernode
+  - ginkgo/convert
+  - ginkgo/interrupthandler
+  - ginkgo/nodot
+  - ginkgo/testrunner
+  - ginkgo/testsuite
+  - ginkgo/watch
   - internal/leafnodes
-  - internal/spec
-  - internal/specrunner
 - name: github.com/onsi/gomega
   version: 0df7b7fdb38123c12a1f569f0affb2c2a7bd72cf
   subpackages:
@@ -45,7 +54,6 @@ testImports:
   - matchers
   - types
   - internal/oraclematcher
-  - format
   - matchers/support/goraph/bipartitegraph
   - matchers/support/goraph/edge
   - matchers/support/goraph/node
