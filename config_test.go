@@ -3,6 +3,7 @@ package cluster
 import (
 	"time"
 
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -19,6 +20,7 @@ var _ = Describe("Config", func() {
 		Expect(subject.Group.Heartbeat.Interval).To(Equal(3 * time.Second))
 		Expect(subject.Group.Return.Notifications).To(BeFalse())
 		Expect(subject.Metadata.Retry.Max).To(Equal(3))
+		Expect(subject.Config.Version).To(Equal(sarama.V0_9_0_1))
 	})
 
 })
