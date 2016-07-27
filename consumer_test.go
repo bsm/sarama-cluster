@@ -145,7 +145,7 @@ var _ = Describe("Consumer", func() {
 		offsets, err := cs.fetchOffsets(cs.Subscriptions())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(offsets).To(Equal(map[string]map[int32]offsetInfo{
-			"topic-a": {0: {Offset: -1}, 1: {Offset: 3}, 2: {Offset: 4}, 3: {Offset: -1}},
+			"topic-a": {0: {Offset: -1}, 1: {Offset: 4}, 2: {Offset: 5}, 3: {Offset: -1}},
 		}))
 	})
 

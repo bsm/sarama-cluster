@@ -135,7 +135,7 @@ func (c *Consumer) CommitOffsets() error {
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
 		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset+1, 0, state.Info.Metadata)
 			dirty = true
 		}
 	}

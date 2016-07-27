@@ -42,7 +42,7 @@ type offsetInfo struct {
 
 func (i offsetInfo) NextOffset(fallback int64) int64 {
 	if i.Offset > -1 {
-		return i.Offset + 1
+		return i.Offset
 	}
 	return fallback
 }
