@@ -150,6 +150,7 @@ func (c *Consumer) CommitOffsets() error {
 
 	resp, err := broker.CommitOffset(req)
 	if err != nil {
+		_ = broker.Close()
 		return err
 	}
 
@@ -359,6 +360,7 @@ func (c *Consumer) heartbeat() error {
 		GenerationId: c.generationID,
 	})
 	if err != nil {
+		_ = broker.Close()
 		return err
 	}
 	return resp.Err
@@ -453,6 +455,7 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 
 	resp, err := broker.JoinGroup(req)
 	if err != nil {
+		_ = broker.Close()
 		return nil, err
 	} else if resp.Err != sarama.ErrNoError {
 		return nil, resp.Err
@@ -502,6 +505,7 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 
 	sync, err := broker.SyncGroup(req)
 	if err != nil {
+		_ = broker.Close()
 		return nil, err
 	} else if sync.Err != sarama.ErrNoError {
 		return nil, sync.Err
@@ -551,6 +555,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 
 	resp, err := broker.FetchOffset(req)
 	if err != nil {
+		_ = broker.Close()
 		return nil, err
 	}
 
@@ -582,6 +587,10 @@ func (c *Consumer) leaveGroup() error {
 		GroupId:  c.groupID,
 		MemberId: c.memberID,
 	})
+	if err != nil {
+		_ = broker.Close()
+	}
+
 	return err
 }
 
