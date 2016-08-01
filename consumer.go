@@ -326,22 +326,19 @@ func (c *Consumer) handleError(e *Error) {
 
 // Releases the consumer and commits offsets, called from rebalance() and Close()
 func (c *Consumer) release() (err error) {
-	// Stop all consumers, don't stop on errors
-	if e := c.subs.Stop(); e != nil {
-		err = e
-	}
+	// Stop all consumers
+	c.subs.AsyncStop()
+
+	// Clear subscriptions on exit
+	defer c.subs.Clear()
 
 	// Wait for messages to be processed
 	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
 
-	// Commit offsets
+	// Commit offsets, continue on errors
 	if e := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); e != nil {
 		err = e
 	}
-
-	// Clear subscriptions
-	c.subs.Clear()
-
 	return
 }
 
@@ -411,17 +408,28 @@ func (c *Consumer) subscribe(subs map[string][]int32) error {
 		return err
 	}
 
-	// Create consumers
+	// create consumers in parallel
+	errs := make(chan error, len(subs))
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
-			if err := c.createConsumer(topic, partition, offsets[topic][partition]); err != nil {
-				_ = c.release()
-				_ = c.leaveGroup()
-				return err
-			}
+			info := offsets[topic][partition]
+			go func(t string, p int32) {
+				errs <- c.createConsumer(t, p, info)
+			}(topic, partition)
 		}
 	}
-	return nil
+
+	// consume errors
+	for i := 0; i < len(subs); i++ {
+		if e := <-errs; e != nil {
+			err = e
+		}
+	}
+	if err != nil {
+		_ = c.release()
+		_ = c.leaveGroup()
+	}
+	return err
 }
 
 // --------------------------------------------------------------------

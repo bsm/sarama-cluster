@@ -66,7 +66,7 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 	}
 }
 
-func (c *partitionConsumer) Close() (err error) {
+func (c *partitionConsumer) AsyncClose() {
 	if c.closed {
 		return
 	}
@@ -75,10 +75,7 @@ func (c *partitionConsumer) Close() (err error) {
 	close(c.dying)
 	<-c.dead
 
-	if e := c.pcm.Close(); e != nil {
-		err = e
-	}
-	return
+	c.pcm.AsyncClose()
 }
 
 func (c *partitionConsumer) State() partitionState {
@@ -175,23 +172,14 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 	return snap
 }
 
-func (m *partitionMap) Stop() (err error) {
+func (m *partitionMap) AsyncStop() {
 	m.mutex.RLock()
-	size := len(m.data)
-	errs := make(chan error, size)
 	for tp := range m.data {
 		go func(p *partitionConsumer) {
-			errs <- p.Close()
+			p.AsyncClose()
 		}(m.data[tp])
 	}
 	m.mutex.RUnlock()
-
-	for i := 0; i < size; i++ {
-		if e := <-errs; e != nil {
-			err = e
-		}
-	}
-	return
 }
 
 func (m *partitionMap) Clear() {
