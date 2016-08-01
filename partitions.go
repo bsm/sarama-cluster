@@ -3,6 +3,7 @@ package cluster
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Shopify/sarama"
 )
@@ -13,7 +14,7 @@ type partitionConsumer struct {
 	state partitionState
 	mutex sync.Mutex
 
-	closed      bool
+	closed      int32
 	dying, dead chan none
 }
 
@@ -66,19 +67,15 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 	}
 }
 
-func (c *partitionConsumer) Close() (err error) {
-	if c.closed {
+func (c *partitionConsumer) Close() {
+	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return
 	}
 
-	c.closed = true
 	close(c.dying)
 	<-c.dead
 
-	if e := c.pcm.Close(); e != nil {
-		err = e
-	}
-	return
+	c.pcm.AsyncClose()
 }
 
 func (c *partitionConsumer) State() partitionState {
@@ -175,23 +172,12 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 	return snap
 }
 
-func (m *partitionMap) Stop() (err error) {
+func (m *partitionMap) Stop() {
 	m.mutex.RLock()
-	size := len(m.data)
-	errs := make(chan error, size)
-	for tp := range m.data {
-		go func(p *partitionConsumer) {
-			errs <- p.Close()
-		}(m.data[tp])
+	for _, pcm := range m.data {
+		pcm.Close()
 	}
 	m.mutex.RUnlock()
-
-	for i := 0; i < size; i++ {
-		if e := <-errs; e != nil {
-			err = e
-		}
-	}
-	return
 }
 
 func (m *partitionMap) Clear() {
