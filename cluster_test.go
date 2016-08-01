@@ -186,4 +186,4 @@ func (*mockConsumer) ConsumePartition(topic string, partition int32, offset int6
 	}, nil
 }
 
-func (*mockPartitionConsumer) Close() error { return nil }
+func (*mockPartitionConsumer) AsyncClose() {}

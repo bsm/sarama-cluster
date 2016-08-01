@@ -17,8 +17,7 @@ var _ = Describe("partitionConsumer", func() {
 
 	AfterEach(func() {
 		close(subject.dead)
-		Expect(subject.Close()).NotTo(HaveOccurred())
-		Expect(subject.Close()).NotTo(HaveOccurred()) // test that consumer can be closed 2x
+		subject.AsyncClose()
 	})
 
 	It("should set state", func() {
@@ -31,7 +30,7 @@ var _ = Describe("partitionConsumer", func() {
 	It("should recover from default offset if requested offset is out of bounds", func() {
 		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{200, "m3ta"}, sarama.OffsetOldest)
 		Expect(err).NotTo(HaveOccurred())
-		defer pc.Close()
+		defer pc.AsyncClose()
 		close(pc.dead)
 
 		state := pc.State()
