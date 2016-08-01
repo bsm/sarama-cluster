@@ -150,6 +150,7 @@ func (c *Consumer) CommitOffsets() error {
 
 	resp, err := broker.CommitOffset(req)
 	if err != nil {
+		c.refreshCoordinator()
 		return err
 	}
 
@@ -359,6 +360,7 @@ func (c *Consumer) heartbeat() error {
 		GenerationId: c.generationID,
 	})
 	if err != nil {
+		c.refreshCoordinator()
 		return err
 	}
 	return resp.Err
@@ -453,8 +455,10 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 
 	resp, err := broker.JoinGroup(req)
 	if err != nil {
+		c.refreshCoordinator()
 		return nil, err
 	} else if resp.Err != sarama.ErrNoError {
+		c.refreshCoordinator()
 		return nil, resp.Err
 	}
 
@@ -502,8 +506,10 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 
 	sync, err := broker.SyncGroup(req)
 	if err != nil {
+		c.refreshCoordinator()
 		return nil, err
 	} else if sync.Err != sarama.ErrNoError {
+		c.refreshCoordinator()
 		return nil, sync.Err
 	}
 
@@ -551,6 +557,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 
 	resp, err := broker.FetchOffset(req)
 	if err != nil {
+		c.refreshCoordinator()
 		return nil, err
 	}
 
@@ -578,10 +585,12 @@ func (c *Consumer) leaveGroup() error {
 		return err
 	}
 
-	_, err = broker.LeaveGroup(&sarama.LeaveGroupRequest{
+	if _, err = broker.LeaveGroup(&sarama.LeaveGroupRequest{
 		GroupId:  c.groupID,
 		MemberId: c.memberID,
-	})
+	}); err != nil {
+		c.refreshCoordinator()
+	}
 	return err
 }
 
@@ -608,8 +617,11 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	err := c.CommitOffsets()
 	if err != nil && retries > 0 && c.subs.HasDirty() {
-		_ = c.client.RefreshCoordinator(c.groupID)
 		return c.commitOffsetsWithRetry(retries - 1)
 	}
 	return err
+}
+
+func (c *Consumer) refreshCoordinator() {
+	_ = c.client.RefreshCoordinator(c.groupID)
 }
