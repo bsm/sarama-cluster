@@ -149,12 +149,13 @@ func (c *Consumer) CommitOffsets() error {
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return err
 	}
 
 	resp, err := broker.CommitOffset(req)
 	if err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 		return err
 	}
 
@@ -352,6 +353,7 @@ func (c *Consumer) release() (err error) {
 func (c *Consumer) heartbeat() error {
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return err
 	}
 
@@ -361,7 +363,7 @@ func (c *Consumer) heartbeat() error {
 		GenerationId: c.generationID,
 	})
 	if err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 		return err
 	}
 	return resp.Err
@@ -462,15 +464,16 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return nil, err
 	}
 
 	resp, err := broker.JoinGroup(req)
 	if err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 		return nil, err
 	} else if resp.Err != sarama.ErrNoError {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, resp.Err)
 		return nil, resp.Err
 	}
 
@@ -513,15 +516,16 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return nil, err
 	}
 
 	resp, err := broker.SyncGroup(req)
 	if err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 		return nil, err
 	} else if resp.Err != sarama.ErrNoError {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, resp.Err)
 		return nil, resp.Err
 	}
 
@@ -564,12 +568,13 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return nil, err
 	}
 
 	resp, err := broker.FetchOffset(req)
 	if err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 		return nil, err
 	}
 
@@ -594,6 +599,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 func (c *Consumer) leaveGroup() error {
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
+		c.closeCoordinator(broker, err)
 		return err
 	}
 
@@ -601,7 +607,7 @@ func (c *Consumer) leaveGroup() error {
 		GroupId:  c.groupID,
 		MemberId: c.memberID,
 	}); err != nil {
-		c.refreshCoordinator()
+		c.closeCoordinator(broker, err)
 	}
 	return err
 }
@@ -634,6 +640,13 @@ func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	return err
 }
 
-func (c *Consumer) refreshCoordinator() {
-	_ = c.client.RefreshCoordinator(c.groupID)
+func (c *Consumer) closeCoordinator(broker *sarama.Broker, err error) {
+	if broker != nil {
+		_ = broker.Close()
+	}
+
+	switch err {
+	case sarama.ErrConsumerCoordinatorNotAvailable, sarama.ErrNotCoordinatorForConsumer:
+		_ = c.client.RefreshCoordinator(c.groupID)
+	}
 }
