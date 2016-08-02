@@ -131,6 +131,10 @@ func (c *Consumer) CommitOffsets() error {
 		RetentionTime:           -1,
 	}
 
+	if rt := c.client.config.Consumer.Offsets.Retention; rt != 0 {
+		req.RetentionTime = int64(rt / time.Millisecond)
+	}
+
 	var dirty bool
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
@@ -512,22 +516,22 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		return nil, err
 	}
 
-	sync, err := broker.SyncGroup(req)
+	resp, err := broker.SyncGroup(req)
 	if err != nil {
 		c.refreshCoordinator()
 		return nil, err
-	} else if sync.Err != sarama.ErrNoError {
+	} else if resp.Err != sarama.ErrNoError {
 		c.refreshCoordinator()
-		return nil, sync.Err
+		return nil, resp.Err
 	}
 
 	// Return if there is nothing to subscribe to
-	if len(sync.MemberAssignment) == 0 {
+	if len(resp.MemberAssignment) == 0 {
 		return nil, nil
 	}
 
 	// Get assigned subscriptions
-	members, err := sync.GetMemberAssignment()
+	members, err := resp.GetMemberAssignment()
 	if err != nil {
 		return nil, err
 	}
