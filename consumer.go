@@ -332,7 +332,7 @@ func (c *Consumer) handleError(e *Error) {
 // Releases the consumer and commits offsets, called from rebalance() and Close()
 func (c *Consumer) release() (err error) {
 	// Stop all consumers
-	c.subs.AsyncStop()
+	c.subs.Stop()
 
 	// Clear subscriptions on exit
 	defer c.subs.Clear()
@@ -344,6 +344,7 @@ func (c *Consumer) release() (err error) {
 	if e := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); e != nil {
 		err = e
 	}
+
 	return
 }
 

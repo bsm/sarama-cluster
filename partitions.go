@@ -172,14 +172,18 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 	return snap
 }
 
-func (m *partitionMap) AsyncStop() {
+func (m *partitionMap) Stop() {
+	wg := new(sync.WaitGroup)
 	m.mutex.RLock()
 	for tp := range m.data {
+		wg.Add(1)
 		go func(p *partitionConsumer) {
 			p.AsyncClose()
+			wg.Done()
 		}(m.data[tp])
 	}
 	m.mutex.RUnlock()
+	wg.Wait()
 }
 
 func (m *partitionMap) Clear() {

@@ -151,11 +151,11 @@ var _ = Describe("Consumer", func() {
 
 	It("should consume/commit/resume", func() {
 		acc := make(chan *testConsumerMessage, 150000)
-		consume("A", "fuzzing", 2000, acc)
+		consume("A", "fuzzing", 1500, acc)
 		consume("B", "fuzzing", 2000, acc)
-		consume("C", "fuzzing", 1000, acc)
-		consume("D", "fuzzing", 100, acc)
-		consume("E", "fuzzing", 200, acc)
+		consume("C", "fuzzing", 1500, acc)
+		consume("D", "fuzzing", 200, acc)
+		consume("E", "fuzzing", 100, acc)
 
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
