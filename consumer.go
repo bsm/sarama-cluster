@@ -104,13 +104,13 @@ func (c *Consumer) Notifications() <-chan *Notification { return c.notifications
 // your application crashes. This means that you may end up processing the same
 // message twice, and your processing should ideally be idempotent.
 func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
-	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset, metadata)
+	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset+1, metadata)
 }
 
 // MarkPartitionOffset marks an offset of the provided topic/partition as processed.
 // See MarkOffset for additional explanation.
 func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
-	c.subs.Fetch(topic, partition).MarkOffset(offset, metadata)
+	c.subs.Fetch(topic, partition).MarkOffset(offset+1, metadata)
 }
 
 // Subscriptions returns the consumed topics and partitions
@@ -139,7 +139,7 @@ func (c *Consumer) CommitOffsets() error {
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
 		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset+1, 0, state.Info.Metadata)
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
 			dirty = true
 		}
 	}
