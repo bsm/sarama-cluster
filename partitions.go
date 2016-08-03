@@ -66,16 +66,16 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 	}
 }
 
-func (c *partitionConsumer) AsyncClose() {
+func (c *partitionConsumer) Close() error {
 	if c.closed {
-		return
+		return nil
 	}
 
 	c.closed = true
 	close(c.dying)
 	<-c.dead
 
-	c.pcm.AsyncClose()
+	return c.pcm.Close()
 }
 
 func (c *partitionConsumer) State() partitionState {
@@ -178,7 +178,7 @@ func (m *partitionMap) Stop() {
 	for tp := range m.data {
 		wg.Add(1)
 		go func(p *partitionConsumer) {
-			p.AsyncClose()
+			_ = p.Close()
 			wg.Done()
 		}(m.data[tp])
 	}
