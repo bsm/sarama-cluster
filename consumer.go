@@ -207,6 +207,13 @@ func (c *Consumer) mainLoop() {
 	for {
 		atomic.StoreInt32(&c.consuming, 0)
 
+		// Check if close was requested
+		select {
+		case <-c.dying:
+			return
+		default:
+		}
+
 		// Remember previous subscriptions
 		var notification *Notification
 		if c.client.config.Group.Return.Notifications {
@@ -221,7 +228,7 @@ func (c *Consumer) mainLoop() {
 		}
 
 		// Start the heartbeat
-		hbStop, hbDone := make(chan struct{}), make(chan struct{})
+		hbStop, hbDone := make(chan none), make(chan none)
 		go c.hbLoop(hbStop, hbDone)
 
 		// Subscribe to topic/partitions
@@ -233,7 +240,7 @@ func (c *Consumer) mainLoop() {
 		}
 
 		// Start consuming and comitting offsets
-		cmStop, cmDone := make(chan struct{}), make(chan struct{})
+		cmStop, cmDone := make(chan none), make(chan none)
 		go c.cmLoop(cmStop, cmDone)
 		atomic.StoreInt32(&c.consuming, 1)
 
@@ -262,7 +269,7 @@ func (c *Consumer) mainLoop() {
 }
 
 // heartbeat loop, triggered by the mainLoop
-func (c *Consumer) hbLoop(stop <-chan struct{}, done chan<- struct{}) {
+func (c *Consumer) hbLoop(stop <-chan none, done chan<- none) {
 	defer close(done)
 
 	ticker := time.NewTicker(c.client.config.Group.Heartbeat.Interval)
@@ -286,7 +293,7 @@ func (c *Consumer) hbLoop(stop <-chan struct{}, done chan<- struct{}) {
 }
 
 // commit loop, triggered by the mainLoop
-func (c *Consumer) cmLoop(stop <-chan struct{}, done chan<- struct{}) {
+func (c *Consumer) cmLoop(stop <-chan none, done chan<- none) {
 	defer close(done)
 
 	ticker := time.NewTicker(c.client.config.Consumer.Offsets.CommitInterval)
@@ -309,12 +316,17 @@ func (c *Consumer) rebalanceError(err error, notification *Notification) {
 	if c.client.config.Group.Return.Notifications {
 		c.notifications <- notification
 	}
+
 	switch err {
 	case sarama.ErrRebalanceInProgress:
 	default:
 		c.handleError(&Error{Ctx: "rebalance", error: err})
 	}
-	time.Sleep(c.client.config.Metadata.Retry.Backoff)
+
+	select {
+	case <-c.dying:
+	case <-time.After(c.client.config.Metadata.Retry.Backoff):
+	}
 }
 
 func (c *Consumer) handleError(e *Error) {
