@@ -173,8 +173,10 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 }
 
 func (m *partitionMap) Stop() {
-	wg := new(sync.WaitGroup)
 	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	wg := new(sync.WaitGroup)
 	for tp := range m.data {
 		wg.Add(1)
 		go func(p *partitionConsumer) {
@@ -182,7 +184,6 @@ func (m *partitionMap) Stop() {
 			wg.Done()
 		}(m.data[tp])
 	}
-	m.mutex.RUnlock()
 	wg.Wait()
 }
 
