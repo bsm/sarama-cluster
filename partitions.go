@@ -72,11 +72,12 @@ func (c *partitionConsumer) Close() error {
 		return nil
 	}
 
+	err := c.pcm.Close()
 	c.closed = true
 	close(c.dying)
 	<-c.dead
 
-	return c.pcm.Close()
+	return err
 }
 
 func (c *partitionConsumer) State() partitionState {
