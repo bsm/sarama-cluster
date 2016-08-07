@@ -39,28 +39,29 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 }
 
 func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+	defer close(c.dead)
+
 	for {
 		select {
-		case msg := <-c.pcm.Messages():
-			if msg != nil {
-				select {
-				case messages <- msg:
-				case <-c.dying:
-					close(c.dead)
-					return
-				}
+		case msg, ok := <-c.pcm.Messages():
+			if !ok {
+				return
 			}
-		case err := <-c.pcm.Errors():
-			if err != nil {
-				select {
-				case errors <- err:
-				case <-c.dying:
-					close(c.dead)
-					return
-				}
+			select {
+			case messages <- msg:
+			case <-c.dying:
+				return
+			}
+		case err, ok := <-c.pcm.Errors():
+			if !ok {
+				return
+			}
+			select {
+			case errors <- err:
+			case <-c.dying:
+				return
 			}
 		case <-c.dying:
-			close(c.dead)
 			return
 		}
 	}
@@ -173,8 +174,10 @@ func (m *partitionMap) Snapshot() map[topicPartition]partitionState {
 }
 
 func (m *partitionMap) Stop() {
-	wg := new(sync.WaitGroup)
 	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	wg := new(sync.WaitGroup)
 	for tp := range m.data {
 		wg.Add(1)
 		go func(p *partitionConsumer) {
@@ -182,7 +185,6 @@ func (m *partitionMap) Stop() {
 			wg.Done()
 		}(m.data[tp])
 	}
-	m.mutex.RUnlock()
 	wg.Wait()
 }
 
