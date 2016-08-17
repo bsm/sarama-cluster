@@ -428,22 +428,26 @@ func (c *Consumer) subscribe(subs map[string][]int32) error {
 	}
 
 	// create consumers in parallel
-	errs := make(chan error, len(subs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	for topic, partitions := range subs {
 		for _, partition := range partitions {
+			wg.Add(1)
+
 			info := offsets[topic][partition]
 			go func(t string, p int32) {
-				errs <- c.createConsumer(t, p, info)
+				if e := c.createConsumer(t, p, info); e != nil {
+					mu.Lock()
+					err = e
+					mu.Unlock()
+				}
+				wg.Done()
 			}(topic, partition)
 		}
 	}
+	wg.Wait()
 
-	// consume errors
-	for i := 0; i < len(subs); i++ {
-		if e := <-errs; e != nil {
-			err = e
-		}
-	}
 	if err != nil {
 		_ = c.release()
 		_ = c.leaveGroup()
