@@ -470,13 +470,12 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 		Version: 1,
 		Topics:  c.topics,
 	}
-	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
-	if err != nil {
-		return nil, err
-	}
-	err = req.AddGroupProtocolMetadata(string(StrategyRoundRobin), meta)
-	if err != nil {
-		return nil, err
+
+	for _, strat := range []Strategy{StrategyRange, StrategyRoundRobin, StrategyStriped} {
+		err := req.AddGroupProtocolMetadata(string(strat), meta)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)

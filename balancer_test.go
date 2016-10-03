@@ -63,11 +63,136 @@ var _ = Describe("balancer", func() {
 			"a": {"one": {0, 2}, "two": {0, 1, 2}},
 			"b": {"one": {1, 3}, "three": {0, 1}},
 		}))
+
+		// Topics are sorted alphabetically, hence why `three` is expected before `two`
+		Expect(subject.Perform(StrategyStriped)).To(Equal(map[string]map[string][]int32{
+			"a": {"one": {0, 2}, "two": {0, 2}, "three": {0}},
+			"b": {"one": {1, 3}, "two": {1}, "three": {1}},
+		}))
 	})
 
 })
 
 var _ = Describe("topicInfo", func() {
+	DescribeTable("Striped", func(memberIDs []string, topics map[string][]int32, expected map[string]map[string][]int32) {
+		r := &balancer{
+			topics: make(map[string]topicInfo),
+		}
+
+		for topicName, partitions := range topics {
+			r.topics[topicName] = topicInfo{
+				MemberIDs:  memberIDs,
+				Partitions: partitions,
+			}
+		}
+
+		res := r.performStripedBalance()
+		Expect(res).To(Equal(expected))
+	},
+
+		Entry("More consumers than topics",
+			[]string{"M1", "M2", "M3"},
+			map[string][]int32{
+				"T1": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0},
+				},
+				"M2": {
+					"T1": []int32{1},
+				},
+			}),
+
+		Entry("Uneven number of consumers",
+			[]string{"M1", "M2", "M3"},
+			map[string][]int32{
+				"T1": {0, 1},
+				"T2": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0},
+					"T2": []int32{1},
+				},
+				"M2": {
+					"T1": []int32{1},
+				},
+				"M3": {
+					"T2": []int32{0},
+				},
+			}),
+
+		Entry("Many small topics",
+			[]string{"M1", "M2", "M3", "M4"},
+			map[string][]int32{
+				"T1": {0, 1},
+				"T2": {0, 1},
+				"T3": {0, 1},
+				"T4": {0, 1},
+				"T5": {0, 1},
+				"T6": {0, 1},
+				"T7": {0, 1},
+				"T8": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0},
+					"T3": []int32{0},
+					"T5": []int32{0},
+					"T7": []int32{0},
+				},
+				"M2": {
+					"T1": []int32{1},
+					"T3": []int32{1},
+					"T5": []int32{1},
+					"T7": []int32{1},
+				},
+				"M3": {
+					"T2": []int32{0},
+					"T4": []int32{0},
+					"T6": []int32{0},
+					"T8": []int32{0},
+				},
+				"M4": {
+					"T2": []int32{1},
+					"T4": []int32{1},
+					"T6": []int32{1},
+					"T8": []int32{1},
+				},
+			}),
+
+		Entry("Varied partition counts",
+			[]string{"M1", "M2", "M3", "M4"},
+			map[string][]int32{
+				"T1": {0, 1},
+				"T2": {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+				"T3": {0, 1, 2, 3},
+				"T4": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0},
+					"T2": []int32{2, 6, 10},
+					"T3": []int32{3},
+				},
+				"M2": {
+					"T1": []int32{1},
+					"T2": []int32{3, 7},
+					"T3": []int32{0},
+					"T4": []int32{0},
+				},
+				"M3": {
+					"T2": []int32{0, 4, 8},
+					"T3": []int32{1},
+					"T4": []int32{1},
+				},
+				"M4": {
+					"T2": []int32{1, 5, 9},
+					"T3": []int32{2},
+				},
+			}),
+	)
 
 	DescribeTable("Ranges",
 		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
@@ -120,5 +245,4 @@ var _ = Describe("topicInfo", func() {
 			"M1": {0, 6}, "M2": {2, 8}, "M3": {4},
 		}),
 	)
-
 })
