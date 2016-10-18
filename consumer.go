@@ -637,7 +637,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	// Create partitionConsumer
 	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	// Store in subscriptions
