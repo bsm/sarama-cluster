@@ -1,9 +1,8 @@
 sudo: false
 language: go
 go:
-  - 1.7
+  - 1.7.3
   - 1.6.3
-  - 1.5.4
 install:
   - go get -u github.com/Masterminds/glide
   - glide install
