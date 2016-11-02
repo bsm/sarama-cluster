@@ -174,7 +174,12 @@ func (c *Consumer) CommitOffsets() error {
 
 // Close safely closes the consumer and releases all resources
 func (c *Consumer) Close() (err error) {
-	close(c.dying)
+	select {
+	case <-c.dying:
+		return
+	default:
+		close(c.dying)
+	}
 	<-c.dead
 
 	if e := c.release(); e != nil {
