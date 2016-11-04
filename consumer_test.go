@@ -190,4 +190,11 @@ var _ = Describe("Consumer", func() {
 		Expect(uniques).To(HaveLen(15000))
 	})
 
+	It("should allow close to be called multiple times", func() {
+		cs, err := newConsumer(testGroup)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cs.Close()).NotTo(HaveOccurred())
+		Expect(cs.Close()).NotTo(HaveOccurred())
+	})
+
 })

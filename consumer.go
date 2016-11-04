@@ -174,7 +174,12 @@ func (c *Consumer) CommitOffsets() error {
 
 // Close safely closes the consumer and releases all resources
 func (c *Consumer) Close() (err error) {
-	close(c.dying)
+	select {
+	case <-c.dying:
+		return
+	default:
+		close(c.dying)
+	}
 	<-c.dead
 
 	if e := c.release(); e != nil {
@@ -636,7 +641,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	// Create partitionConsumer
 	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	// Store in subscriptions
