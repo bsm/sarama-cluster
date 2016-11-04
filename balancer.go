@@ -132,8 +132,8 @@ func (r *balancer) Perform(s Strategy) map[string]map[string][]int32 {
 	}
 
 	// Striped behaves slightly differently, hence why it is performed in its own function.
-	if s == StrategyStriped {
-		return r.performStripedBalance()
+	if s == StrategyStriped || s == StrategyTopic {
+		return r.performMultibalance(s)
 	}
 
 	res := make(map[string]map[string][]int32, 1)
@@ -148,7 +148,7 @@ func (r *balancer) Perform(s Strategy) map[string]map[string][]int32 {
 	return res
 }
 
-func (r *balancer) performStripedBalance() map[string]map[string][]int32 {
+func (r *balancer) performMultibalance(strat Strategy) map[string]map[string][]int32 {
 	members := make(map[string]struct{}, 1)
 	topics := make(map[string][]int32, 1)
 	for topic, info := range r.topics {
@@ -173,16 +173,27 @@ func (r *balancer) performStripedBalance() map[string]map[string][]int32 {
 	memberCount := len(memberIDs)
 	res := make(map[string]map[string][]int32, 1)
 
-	memberIdx := 0
-	for _, topicName := range topicNames {
-		partitions := topics[topicName]
-		for _, partition := range partitions {
+	if strat == StrategyTopic {
+		for memberIdx, topicName := range topicNames {
+			partitions := topics[topicName]
 			memberID := memberIDs[memberIdx%memberCount]
 			if _, ok := res[memberID]; !ok {
 				res[memberID] = make(map[string][]int32, 1)
 			}
-			res[memberID][topicName] = append(res[memberID][topicName], partition)
-			memberIdx++
+			res[memberID][topicName] = append(res[memberID][topicName], partitions...)
+		}
+	} else { // StrategyStriped
+		memberIdx := 0
+		for _, topicName := range topicNames {
+			partitions := topics[topicName]
+			for _, partition := range partitions {
+				memberID := memberIDs[memberIdx%memberCount]
+				if _, ok := res[memberID]; !ok {
+					res[memberID] = make(map[string][]int32, 1)
+				}
+				res[memberID][topicName] = append(res[memberID][topicName], partition)
+				memberIdx++
+			}
 		}
 	}
 

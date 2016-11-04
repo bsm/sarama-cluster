@@ -34,6 +34,10 @@ const (
 	// of topics.  It will combine all members' subscribed topics into a single set and
 	// distribute partitions to consumers evenly.
 	StrategyStriped Strategy = "striped"
+
+	// StrategyTopic partitions topics evenly amongst consumers.  A consumer is guaranteed to
+	// have all partitions for a topic.
+	StrategyTopic Strategy = "topic"
 )
 
 // Error instances are wrappers for internal errors with a context and

@@ -74,6 +74,62 @@ var _ = Describe("balancer", func() {
 })
 
 var _ = Describe("topicInfo", func() {
+	DescribeTable("Topic balancer", func(memberIDs []string, topics map[string][]int32, expected map[string]map[string][]int32) {
+		r := &balancer{
+			topics: make(map[string]topicInfo),
+		}
+
+		for topicName, partitions := range topics {
+			r.topics[topicName] = topicInfo{
+				MemberIDs:  memberIDs,
+				Partitions: partitions,
+			}
+		}
+
+		res := r.performMultibalance(StrategyTopic)
+		Expect(res).To(Equal(expected))
+	},
+
+		Entry("Normal operating",
+			[]string{"M1", "M2", "M3"},
+			map[string][]int32{
+				"T1": {0, 1},
+				"T2": {0, 1},
+				"T3": {0, 1},
+				"T4": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0, 1},
+					"T4": []int32{0, 1},
+				},
+				"M2": {
+					"T2": []int32{0, 1},
+				},
+				"M3": {
+					"T3": []int32{0, 1},
+				},
+			}),
+
+		Entry("Big app",
+			[]string{"M1", "M2"},
+			map[string][]int32{
+				"T1": {0, 1},
+				"T2": {0, 1, 2, 3},
+				"T3": {0, 1},
+				"T4": {0, 1},
+			},
+			map[string]map[string][]int32{
+				"M1": {
+					"T1": []int32{0, 1},
+					"T3": []int32{0, 1},
+				},
+				"M2": {
+					"T2": []int32{0, 1, 2, 3},
+					"T4": []int32{0, 1},
+				},
+			}))
+
 	DescribeTable("Striped", func(memberIDs []string, topics map[string][]int32, expected map[string]map[string][]int32) {
 		r := &balancer{
 			topics: make(map[string]topicInfo),
@@ -86,7 +142,7 @@ var _ = Describe("topicInfo", func() {
 			}
 		}
 
-		res := r.performStripedBalance()
+		res := r.performMultibalance(StrategyStriped)
 		Expect(res).To(Equal(expected))
 	},
 

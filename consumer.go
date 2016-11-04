@@ -476,7 +476,7 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 		Topics:  c.topics,
 	}
 
-	for _, strat := range []Strategy{StrategyRange, StrategyRoundRobin, StrategyStriped} {
+	for _, strat := range []Strategy{StrategyRange, StrategyRoundRobin, StrategyStriped, StrategyTopic} {
 		err := req.AddGroupProtocolMetadata(string(strat), meta)
 		if err != nil {
 			return nil, err
