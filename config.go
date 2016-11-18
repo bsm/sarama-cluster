@@ -12,6 +12,9 @@ var minVersion = sarama.V0_9_0_0
 type Config struct {
 	sarama.Config
 
+	// Channel to notify when the partition consumers are ready
+	ConsumersReadyCh chan struct{}
+
 	// Group is the namespace for group management properties
 	Group struct {
 		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
