@@ -91,7 +91,7 @@ func (c *Consumer) Errors() <-chan error { return c.errors }
 
 // Notifications returns a channel of Notifications that occur during consumer
 // rebalancing. Notifications will only be emitted over this channel, if your config's
-// Cluster.Return.Notifications setting to true.
+// Group.Return.Notifications setting to true.
 func (c *Consumer) Notifications() <-chan *Notification { return c.notifications }
 
 // MarkOffset marks the provided message as processed, alongside a metadata string
