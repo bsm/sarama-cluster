@@ -11,7 +11,7 @@ var _ = Describe("partitionConsumer", func() {
 
 	BeforeEach(func() {
 		var err error
-		subject, err = newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetOldest)
+		subject, err = newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetOldest, false)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -28,7 +28,7 @@ var _ = Describe("partitionConsumer", func() {
 	})
 
 	It("should recover from default offset if requested offset is out of bounds", func() {
-		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{200, "m3ta"}, sarama.OffsetOldest)
+		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{200, "m3ta"}, sarama.OffsetOldest, false)
 		Expect(err).NotTo(HaveOccurred())
 		defer pc.Close()
 		close(pc.dead)
@@ -91,7 +91,7 @@ var _ = Describe("partitionMap", func() {
 	It("should fetch/store", func() {
 		Expect(subject.Fetch("topic", 0)).To(BeNil())
 
-		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest)
+		pc, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest, false)
 		Expect(err).NotTo(HaveOccurred())
 
 		subject.Store("topic", 0, pc)
@@ -101,9 +101,9 @@ var _ = Describe("partitionMap", func() {
 	})
 
 	It("should return info", func() {
-		pc0, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest)
+		pc0, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest, false)
 		Expect(err).NotTo(HaveOccurred())
-		pc1, err := newPartitionConsumer(&mockConsumer{}, "topic", 1, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest)
+		pc1, err := newPartitionConsumer(&mockConsumer{}, "topic", 1, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest, false)
 		Expect(err).NotTo(HaveOccurred())
 		subject.Store("topic", 0, pc0)
 		subject.Store("topic", 1, pc1)
@@ -114,9 +114,9 @@ var _ = Describe("partitionMap", func() {
 	})
 
 	It("should create snapshots", func() {
-		pc0, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest)
+		pc0, err := newPartitionConsumer(&mockConsumer{}, "topic", 0, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest, false)
 		Expect(err).NotTo(HaveOccurred())
-		pc1, err := newPartitionConsumer(&mockConsumer{}, "topic", 1, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest)
+		pc1, err := newPartitionConsumer(&mockConsumer{}, "topic", 1, offsetInfo{2000, "m3ta"}, sarama.OffsetNewest, false)
 		Expect(err).NotTo(HaveOccurred())
 
 		subject.Store("topic", 0, pc0)

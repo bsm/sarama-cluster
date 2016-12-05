@@ -16,7 +16,11 @@ type Config struct {
 	Group struct {
 		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
 		PartitionStrategy Strategy
-		Offsets           struct {
+		// Allow only one message per partition in consumer's messages channel
+		// consumer.MarkDone() should be called to ack the processing and allow
+		// another message from this partition to be sent to the channel
+		Sync    bool
+		Offsets struct {
 			Retry struct {
 				// The numer retries when comitting offsets (defaults to 3).
 				Max int
