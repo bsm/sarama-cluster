@@ -1,8 +1,8 @@
 hash: 76e38c5c70ece28550aacde5afd4ea321c4986b615e0bd145f899664ffc8888b
-updated: 2016-11-02T12:55:47.729427222Z
+updated: 2016-12-06T10:20:50.087816799Z
 imports:
 - name: github.com/davecgh/go-spew
-  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
   subpackages:
   - spew
 - name: github.com/eapache/go-resiliency
@@ -12,16 +12,16 @@ imports:
 - name: github.com/eapache/go-xerial-snappy
   version: bb955e01b9346ac19dc29eb16586c90ded99a98c
 - name: github.com/eapache/queue
-  version: ded5959c0d4e360646dc9e9908cff48666781367
+  version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
 - name: github.com/golang/snappy
   version: d9eb7a3d35ec988b8585d4a0068e462c27d28380
 - name: github.com/klauspost/crc32
-  version: 19b0b332c9e4516a6370a0456e6182c3b5036720
+  version: cb6bfca970f6908083f26f39a79009d608efd5cd
 - name: github.com/Shopify/sarama
   version: bd61cae2be85fa6ff40eb23dcdd24567967ac2ae
 testImports:
 - name: github.com/onsi/ginkgo
-  version: 059cec02d342bab423425a99b191186a03255e9e
+  version: a8ccd817611666211fdf6e6a752174a0db8374a8
   subpackages:
   - config
   - extensions/table
@@ -37,9 +37,11 @@ testImports:
   - internal/writer
   - reporters
   - reporters/stenographer
+  - reporters/stenographer/support/go-colorable
+  - reporters/stenographer/support/go-isatty
   - types
 - name: github.com/onsi/gomega
-  version: 0df7b7fdb38123c12a1f569f0affb2c2a7bd72cf
+  version: 7e2072f716a912a29b2dfa54398faf096a9909e3
   subpackages:
   - format
   - internal/assertion
@@ -52,5 +54,9 @@ testImports:
   - matchers/support/goraph/node
   - matchers/support/goraph/util
   - types
+- name: golang.org/x/sys
+  version: c200b10b5d5e122be351b67af224adc6128af5bf
+  subpackages:
+  - unix
 - name: gopkg.in/yaml.v2
-  version: a83829b6f1293c91addabc89d0571c246397bbf4
+  version: a5b47d31c556af34a302ce5d659e6fea44d90de0
