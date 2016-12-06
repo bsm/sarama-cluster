@@ -88,7 +88,10 @@ var _ = BeforeSuite(func() {
 	Eventually(func() error {
 		var err error
 
-		testClient, err = sarama.NewClient(testKafkaAddrs, nil)
+		// sync-producer requires Return.Successes set to true
+		testConf := sarama.NewConfig()
+		testConf.Producer.Return.Successes  = true
+		testClient, err = sarama.NewClient(testKafkaAddrs, testConf)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
 
