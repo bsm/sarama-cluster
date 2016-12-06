@@ -138,6 +138,18 @@ func newPartitionMap() *partitionMap {
 	}
 }
 
+func (m *partitionMap) IsSubscribedTo(topic string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for tp := range m.data {
+		if tp.Topic == topic {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *partitionMap) Fetch(topic string, partition int32) *partitionConsumer {
 	m.mu.RLock()
 	pc, _ := m.data[topicPartition{topic, partition}]

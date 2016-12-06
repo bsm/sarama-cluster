@@ -20,7 +20,9 @@ type Consumer struct {
 	generationID int32
 	groupID      string
 	memberID     string
-	topics       []string
+
+	targetTopics []string
+	knownTopics  []string
 
 	dying, dead chan none
 
@@ -39,14 +41,14 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		return nil, err
 	}
 
+	sort.Strings(topics)
 	c := &Consumer{
-		client: client,
-
-		csmr: csmr,
-		subs: newPartitionMap(),
-
+		client:  client,
+		csmr:    csmr,
+		subs:    newPartitionMap(),
 		groupID: groupID,
-		topics:  topics,
+
+		targetTopics: topics,
 
 		dying: make(chan none),
 		dead:  make(chan none),
@@ -244,6 +246,10 @@ func (c *Consumer) mainLoop() {
 			continue
 		}
 
+		// Start topic watcher loop
+		twStop, twDone := make(chan none), make(chan none)
+		go c.twLoop(twStop, twDone)
+
 		// Start consuming and comitting offsets
 		cmStop, cmDone := make(chan none), make(chan none)
 		go c.cmLoop(cmStop, cmDone)
@@ -259,14 +265,25 @@ func (c *Consumer) mainLoop() {
 		select {
 		case <-hbDone:
 			close(cmStop)
+			close(twStop)
 			<-cmDone
-		case <-cmDone:
+			<-twDone
+		case <-twDone:
+			close(cmStop)
 			close(hbStop)
+			<-cmDone
+			<-hbDone
+		case <-cmDone:
+			close(twStop)
+			close(hbStop)
+			<-twDone
 			<-hbDone
 		case <-c.dying:
 			close(cmStop)
-			<-cmDone
+			close(twStop)
 			close(hbStop)
+			<-cmDone
+			<-twDone
 			<-hbDone
 			return
 		}
@@ -290,6 +307,34 @@ func (c *Consumer) hbLoop(stop <-chan none, done chan<- none) {
 			default:
 				c.handleError(&Error{Ctx: "heartbeat", error: err})
 				return
+			}
+		case <-stop:
+			return
+		}
+	}
+}
+
+// topic watcher loop, triggered by the mainLoop
+func (c *Consumer) twLoop(stop <-chan none, done chan<- none) {
+	defer close(done)
+
+	// ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			topics, err := c.client.Topics()
+			if err != nil {
+				c.handleError(&Error{Ctx: "topics", error: err})
+				return
+			}
+
+			for _, topic := range topics {
+				if c.isTargetTopic(topic) && !c.isKnownTopic(topic) {
+					return
+				}
 			}
 		case <-stop:
 			return
@@ -395,6 +440,13 @@ func (c *Consumer) rebalance() (map[string][]int32, error) {
 		return nil, err
 	}
 
+	allTopics, err := c.client.Topics()
+	if err != nil {
+		return nil, err
+	}
+	c.knownTopics = c.onlyConsumableTopics(allTopics)
+	sort.Strings(c.knownTopics)
+
 	// Release subscriptions
 	if err := c.release(); err != nil {
 		return nil, err
@@ -473,7 +525,7 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 
 	meta := &sarama.ConsumerGroupMemberMetadata{
 		Version: 1,
-		Topics:  c.topics,
+		Topics:  c.knownTopics,
 	}
 	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
 	if err != nil {
@@ -671,4 +723,24 @@ func (c *Consumer) closeCoordinator(broker *sarama.Broker, err error) {
 	case sarama.ErrConsumerCoordinatorNotAvailable, sarama.ErrNotCoordinatorForConsumer:
 		_ = c.client.RefreshCoordinator(c.groupID)
 	}
+}
+
+func (c *Consumer) onlyConsumableTopics(allTopics []string) []string {
+	topics := allTopics[:0]
+	for _, topic := range allTopics {
+		if c.isTargetTopic(topic) {
+			topics = append(topics, topic)
+		}
+	}
+	return topics
+}
+
+func (c *Consumer) isTargetTopic(topic string) bool {
+	pos := sort.SearchStrings(c.targetTopics, topic)
+	return pos < len(c.targetTopics) && c.targetTopics[pos] == topic
+}
+
+func (c *Consumer) isKnownTopic(topic string) bool {
+	pos := sort.SearchStrings(c.knownTopics, topic)
+	return pos < len(c.knownTopics) && c.knownTopics[pos] == topic
 }

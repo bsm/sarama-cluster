@@ -2,8 +2,6 @@ package cluster
 
 import (
 	"fmt"
-	"sync/atomic"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -17,10 +15,10 @@ var _ = Describe("Consumer", func() {
 		return NewConsumer(testKafkaAddrs, group, testTopics, config)
 	}
 
-	var newConsumerOf = func(group, topic string) (*Consumer, error) {
+	var newConsumerOf = func(group string, topics ...string) (*Consumer, error) {
 		config := NewConfig()
 		config.Consumer.Return.Errors = true
-		return NewConsumer(testKafkaAddrs, group, []string{topic}, config)
+		return NewConsumer(testKafkaAddrs, group, topics, config)
 	}
 
 	var subscriptionsOf = func(c *Consumer) GomegaAsyncAssertion {
@@ -106,9 +104,7 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer cs5.Close()
 
-		// wait for rebalance, make sure no errors occurred
-		Eventually(func() bool { return atomic.LoadInt32(&cs5.consuming) == 1 }, "10s", "100ms").Should(BeTrue())
-		time.Sleep(time.Second)
+		// make sure no errors occurred
 		Expect(cs1.Errors()).ShouldNot(Receive())
 		Expect(cs2.Errors()).ShouldNot(Receive())
 		Expect(cs3.Errors()).ShouldNot(Receive())
@@ -116,8 +112,10 @@ var _ = Describe("Consumer", func() {
 		Expect(cs5.Errors()).ShouldNot(Receive())
 
 		// close 4th, make sure the 5th takes over
-		cs4.Close()
-		Eventually(func() bool { return atomic.LoadInt32(&cs4.consuming) == 1 }, "10s", "100ms").Should(BeFalse())
+		Expect(cs4.Close()).To(Succeed())
+		subscriptionsOf(cs1).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+		subscriptionsOf(cs2).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
+		subscriptionsOf(cs3).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
 		subscriptionsOf(cs4).Should(BeEmpty())
 		subscriptionsOf(cs5).Should(HaveKeyWithValue("topic-a", HaveLen(1)))
 
@@ -127,6 +125,16 @@ var _ = Describe("Consumer", func() {
 		Expect(cs3.Errors()).ShouldNot(Receive())
 		Expect(cs4.Errors()).ShouldNot(Receive())
 		Expect(cs5.Errors()).ShouldNot(Receive())
+	})
+
+	It("should be allowed to subscribe to partitions that do not exist (yet)", func() {
+		cs, err := newConsumerOf(testGroup, append([]string{"topic-c"}, testTopics...)...)
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+		subscriptionsOf(cs).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3},
+			"topic-b": {0, 1, 2, 3},
+		}))
 	})
 
 	It("should support manual mark/commit", func() {
