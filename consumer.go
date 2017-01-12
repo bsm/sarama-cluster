@@ -96,6 +96,10 @@ func (c *Consumer) Errors() <-chan error { return c.errors }
 // Group.Return.Notifications setting to true.
 func (c *Consumer) Notifications() <-chan *Notification { return c.notifications }
 
+// HighWaterMarks returns the current high water marks for each topic and partition
+// Consistency between partitions is not garanteed since high water marks are updated separately.
+func (c *Consumer) HighWaterMarks() map[string]map[int32]int64 { return c.csmr.HighWaterMarks() }
+
 // MarkOffset marks the provided message as processed, alongside a metadata string
 // that represents the state of the partition consumer at that point in time. The
 // metadata string can be used by another consumer to restore that state, so it
