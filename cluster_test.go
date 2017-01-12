@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	testKafkaRoot  = "kafka_2.11-0.10.1.0"
+	testKafkaRoot  = "kafka_2.11-0.10.1.1"
 	testKafkaAddrs = []string{"127.0.0.1:29092"}
 	testTopics     = []string{"topic-a", "topic-b"}
 
@@ -90,7 +90,7 @@ var _ = BeforeSuite(func() {
 
 		// sync-producer requires Return.Successes set to true
 		testConf := sarama.NewConfig()
-		testConf.Producer.Return.Successes  = true
+		testConf.Producer.Return.Successes = true
 		testClient, err = sarama.NewClient(testKafkaAddrs, testConf)
 		return err
 	}, "10s", "1s").ShouldNot(HaveOccurred())
