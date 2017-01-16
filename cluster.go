@@ -1,6 +1,9 @@
 package cluster
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 // Strategy for partition to consumer assignement
 type Strategy string
@@ -33,6 +36,10 @@ type none struct{}
 type topicPartition struct {
 	Topic     string
 	Partition int32
+}
+
+func (tp *topicPartition) String() string {
+	return fmt.Sprintf("%s-%d", tp.Topic, tp.Partition)
 }
 
 type offsetInfo struct {

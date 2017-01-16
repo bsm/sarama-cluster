@@ -26,11 +26,24 @@ func (s *OffsetStash) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 // MarkPartitionOffset stashes the offset for the provided topic/partition combination
 func (s *OffsetStash) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	key := topicPartition{Topic: topic, Partition: partition}
 	if info := s.offsets[key]; offset > info.Offset {
 		info.Offset = offset
 		info.Metadata = metadata
 		s.offsets[key] = info
 	}
-	s.mu.Unlock()
+}
+
+// Offsets returns the latest stashed offsets by topic-partition
+func (s *OffsetStash) Offsets() map[string]int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res := make(map[string]int64, len(s.offsets))
+	for tp, info := range s.offsets {
+		res[tp.String()] = info.Offset
+	}
+	return res
 }
