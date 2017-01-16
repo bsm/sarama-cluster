@@ -119,6 +119,18 @@ func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int
 	c.subs.Fetch(topic, partition).MarkOffset(offset+1, metadata)
 }
 
+// MarkOffsets marks stashed offsets as processed.
+// See MarkOffset for additional explanation.
+func (c *Consumer) MarkOffsets(s *OffsetStash) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for tp, info := range s.offsets {
+		c.subs.Fetch(tp.Topic, tp.Partition).MarkOffset(info.Offset+1, info.Metadata)
+		delete(s.offsets, tp)
+	}
+}
+
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
