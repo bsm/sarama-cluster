@@ -35,6 +35,7 @@ type Consumer struct {
 	consumeStart   chan none
 	consumeStartMu sync.Mutex
 	consumeFunc    func(<-chan *sarama.ConsumerMessage)
+	consumeWG      sync.WaitGroup
 
 	commitMu sync.Mutex
 }
@@ -114,20 +115,22 @@ func (c *Consumer) StartConsuming(f func(c <-chan *sarama.ConsumerMessage)) erro
 // This function always returns the same channel.
 func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
 
+	// Close c.messages only once.
+	// Chan close needs to synchronize with consumer.Close()
+	// and to let the currently running consumeFuncs finish
+	// We use consumer.Wait() to ensure everything is done before
+	// attempting to close c.messages.
+	var onceClose sync.Once
+
 	// StartConsuming with a closure, aggregating all partitions to fan-in chan.
 	// Ignore error to remain idempotent: Messages() may be called any number
 	// of times with similar behavior.
 	// This masks a potential error where StartConsuming() is called
 	// separately by the user.
 	c.StartConsuming(func(inCh <-chan *sarama.ConsumerMessage) {
+		onceClose.Do(func() { go func() { c.Wait(); close(c.messages) }() })
 		for m := range inCh {
-			select {
-			case <-c.dying:
-				// Return when consumer is closing, to avoid writing
-				// to a closed chan
-				return
-			case c.messages <- m:
-			}
+			c.messages <- m
 		}
 	})
 
@@ -137,6 +140,7 @@ func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
 // Wait blocks until the consumer is closed.
 func (c *Consumer) Wait() {
 	<-c.dead
+	c.consumeWG.Wait()
 }
 
 // Errors returns a read channel of errors that occur during offset management, if
@@ -248,7 +252,6 @@ func (c *Consumer) Close() (err error) {
 	if e := c.csmr.Close(); e != nil {
 		err = e
 	}
-	close(c.messages)
 	close(c.errors)
 
 	if e := c.leaveGroup(); e != nil {
@@ -765,6 +768,8 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 
 	go func() {
 		<-c.consumeStart
+		c.consumeWG.Add(1)
+		defer c.consumeWG.Done()
 		c.consumeFunc(pCh)
 	}()
 
