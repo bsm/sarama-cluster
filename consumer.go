@@ -766,10 +766,14 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	// Start partition consumer goroutine
 	go pc.Loop(pCh, c.errors)
 
+	c.consumeWG.Add(1)
 	go func() {
-		<-c.consumeStart
-		c.consumeWG.Add(1)
 		defer c.consumeWG.Done()
+		select {
+		case <-c.consumeStart:
+		case <-c.dying:
+			return
+		}
 		c.consumeFunc(pCh)
 	}()
 
