@@ -21,8 +21,8 @@ type Consumer struct {
 	groupID      string
 	memberID     string
 
-	targetTopics []string
-	knownTopics  []string
+	coreTopics  []string
+	extraTopics []string
 
 	dying, dead chan none
 
@@ -48,7 +48,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		subs:    newPartitionMap(),
 		groupID: groupID,
 
-		targetTopics: topics,
+		coreTopics: topics,
 
 		dying: make(chan none),
 		dead:  make(chan none),
@@ -347,7 +347,9 @@ func (c *Consumer) twLoop(stop <-chan none, done chan<- none) {
 			}
 
 			for _, topic := range topics {
-				if c.isTargetTopic(topic) && !c.isKnownTopic(topic) {
+				if !c.isKnownCoreTopic(topic) &&
+					!c.isKnownExtraTopic(topic) &&
+					c.isPotentialExtraTopic(topic) {
 					return
 				}
 			}
@@ -463,8 +465,8 @@ func (c *Consumer) rebalance() (map[string][]int32, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.knownTopics = c.onlyConsumableTopics(allTopics)
-	sort.Strings(c.knownTopics)
+	c.extraTopics = c.selectExtraTopics(allTopics)
+	sort.Strings(c.extraTopics)
 
 	// Release subscriptions
 	if err := c.release(); err != nil {
@@ -544,7 +546,7 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 
 	meta := &sarama.ConsumerGroupMemberMetadata{
 		Version: 1,
-		Topics:  c.knownTopics,
+		Topics:  append(c.coreTopics, c.extraTopics...),
 	}
 	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
 	if err != nil {
@@ -744,22 +746,33 @@ func (c *Consumer) closeCoordinator(broker *sarama.Broker, err error) {
 	}
 }
 
-func (c *Consumer) onlyConsumableTopics(allTopics []string) []string {
-	topics := allTopics[:0]
+func (c *Consumer) selectExtraTopics(allTopics []string) []string {
+	extra := allTopics[:0]
 	for _, topic := range allTopics {
-		if c.isTargetTopic(topic) {
-			topics = append(topics, topic)
+		if !c.isKnownCoreTopic(topic) && c.isPotentialExtraTopic(topic) {
+			extra = append(extra, topic)
 		}
 	}
-	return topics
+	return extra
 }
 
-func (c *Consumer) isTargetTopic(topic string) bool {
-	pos := sort.SearchStrings(c.targetTopics, topic)
-	return pos < len(c.targetTopics) && c.targetTopics[pos] == topic
+func (c *Consumer) isKnownCoreTopic(topic string) bool {
+	pos := sort.SearchStrings(c.coreTopics, topic)
+	return pos < len(c.coreTopics) && c.coreTopics[pos] == topic
 }
 
-func (c *Consumer) isKnownTopic(topic string) bool {
-	pos := sort.SearchStrings(c.knownTopics, topic)
-	return pos < len(c.knownTopics) && c.knownTopics[pos] == topic
+func (c *Consumer) isKnownExtraTopic(topic string) bool {
+	pos := sort.SearchStrings(c.extraTopics, topic)
+	return pos < len(c.extraTopics) && c.extraTopics[pos] == topic
+}
+
+func (c *Consumer) isPotentialExtraTopic(topic string) bool {
+	rx := c.client.config.Group.Topics
+	if rx.Blacklist != nil && rx.Blacklist.MatchString(topic) {
+		return false
+	}
+	if rx.Whitelist != nil && rx.Whitelist.MatchString(topic) {
+		return true
+	}
+	return false
 }

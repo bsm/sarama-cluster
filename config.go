@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -38,6 +39,14 @@ type Config struct {
 			// If enabled, rebalance notification will be returned on the
 			// Notifications channel (default disabled).
 			Notifications bool
+		}
+
+		Topics struct {
+			// An additional whitelist of topics to subscribe to.
+			Whitelist *regexp.Regexp
+			// An additional blacklist of topics to avoid. If set, this will precede over
+			// the Whitelist setting.
+			Blacklist *regexp.Regexp
 		}
 	}
 }

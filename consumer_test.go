@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"regexp"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -127,13 +128,18 @@ var _ = Describe("Consumer", func() {
 		Expect(cs5.Errors()).ShouldNot(Receive())
 	})
 
-	It("should be allowed to subscribe to partitions that do not exist (yet)", func() {
-		cs, err := newConsumerOf(testGroup, append([]string{"topic-c"}, testTopics...)...)
+	It("should be allowed to subscribe to partitions via white/black-lists", func() {
+		config := NewConfig()
+		config.Consumer.Return.Errors = true
+		config.Group.Topics.Whitelist = regexp.MustCompile(`topic-\w+`)
+		config.Group.Topics.Blacklist = regexp.MustCompile(`[bcd]$`)
+
+		cs, err := NewConsumer(testKafkaAddrs, testGroup, nil, config)
 		Expect(err).NotTo(HaveOccurred())
 		defer cs.Close()
+
 		subscriptionsOf(cs).Should(Equal(map[string][]int32{
 			"topic-a": {0, 1, 2, 3},
-			"topic-b": {0, 1, 2, 3},
 		}))
 	})
 
