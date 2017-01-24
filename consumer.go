@@ -334,8 +334,7 @@ func (c *Consumer) hbLoop(stop <-chan none, done chan<- none) {
 func (c *Consumer) twLoop(stop <-chan none, done chan<- none) {
 	defer close(done)
 
-	// ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency)
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency / 2)
 	defer ticker.Stop()
 
 	for {
@@ -451,6 +450,10 @@ func (c *Consumer) heartbeat() error {
 // Performs a rebalance, part of the mainLoop()
 func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
+
+	if err := c.client.RefreshMetadata(); err != nil {
+		return nil, err
+	}
 
 	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
 		return nil, err
