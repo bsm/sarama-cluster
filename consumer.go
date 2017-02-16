@@ -454,7 +454,15 @@ func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
 
 	if err := c.client.RefreshMetadata(); err != nil {
-		return nil, err
+		switch err {
+		case sarama.ErrTopicAuthorizationFailed:
+			// maybe we don't have authorization to describe all topics
+			if err = c.client.RefreshMetadata(c.coreTopics...); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, err
+		}
 	}
 
 	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
