@@ -453,15 +453,8 @@ func (c *Consumer) heartbeat() error {
 func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
 
-	if err := c.client.RefreshMetadata(); err != nil {
-		if err = sarama.ErrTopicAuthorizationFailed {
-			// maybe we don't have authorization to describe all topics
-			if err = c.client.RefreshMetadata(c.coreTopics...); err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
+	if err := c.refreshMetadata(); err != nil {
+		return nil, err
 	}
 
 	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
@@ -782,4 +775,13 @@ func (c *Consumer) isPotentialExtraTopic(topic string) bool {
 		return true
 	}
 	return false
+}
+
+func (c *Consumer) refreshMetadata() error {
+	err := c.client.RefreshMetadata()
+	if err = sarama.ErrTopicAuthorizationFailed {
+		// maybe we didn't have authorization to describe all topics
+		err = c.client.RefreshMetadata(c.coreTopics...)
+	}
+	return err
 }
