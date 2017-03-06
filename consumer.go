@@ -545,8 +545,9 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 	}
 
 	meta := &sarama.ConsumerGroupMemberMetadata{
-		Version: 1,
-		Topics:  append(c.coreTopics, c.extraTopics...),
+		Version:  1,
+		Topics:   append(c.coreTopics, c.extraTopics...),
+		UserData: c.client.config.Group.Member.UserData,
 	}
 	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
 	if err != nil {

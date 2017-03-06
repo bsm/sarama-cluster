@@ -48,6 +48,13 @@ type Config struct {
 			// the Whitelist setting.
 			Blacklist *regexp.Regexp
 		}
+
+		Member struct {
+			// Custom metadata to include when joining the group. The user data for all joined members
+			// can be retrieved by sending a DescribeGroupRequest to the broker that is the
+			// coordinator for the group.
+			UserData []byte
+		}
 	}
 }
 
