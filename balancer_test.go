@@ -35,44 +35,113 @@ var _ = Describe("balancer", func() {
 	BeforeEach(func() {
 		client := &mockClient{
 			topics: map[string][]int32{
-				"one":   {0, 1, 2, 3},
-				"two":   {0, 1, 2},
-				"three": {0, 1},
+				"topic1": {0, 1, 2, 3},
+				"topic2": {0, 1, 2},
+				"topic3": {0, 1},
 			},
 		}
 
 		var err error
 		subject, err = newBalancerFromMeta(client, map[string]sarama.ConsumerGroupMemberMetadata{
-			"b": sarama.ConsumerGroupMemberMetadata{Topics: []string{"three", "one"}},
-			"a": sarama.ConsumerGroupMemberMetadata{Topics: []string{"one", "two"}},
+			"consumerB": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic3", "topic1"}},
+			"consumerA": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2"}},
 		})
 		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should panic if invalid balancer specified", func() {
+		Ω(func() { subject.Perform(Strategy("some non-existant strategy")) }).Should(Panic())
 	})
 
 	It("should parse from meta data", func() {
 		Expect(subject.topics).To(HaveLen(3))
 	})
 
-	It("should perform", func() {
-		Expect(subject.Perform(StrategyRange)).To(Equal(map[string]map[string][]int32{
-			"a": {"one": {0, 1}, "two": {0, 1, 2}},
-			"b": {"one": {2, 3}, "three": {0, 1}},
+	It("should rebalance using the range strategy", func() {
+		rb := rangeBalancer{}
+		Expect(rb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
+			"consumerA": {"topic1": {0, 1}, "topic2": {0, 1, 2}},
+			"consumerB": {"topic1": {2, 3}, "topic3": {0, 1}},
 		}))
+	})
 
-		Expect(subject.Perform(StrategyRoundRobin)).To(Equal(map[string]map[string][]int32{
-			"a": {"one": {0, 2}, "two": {0, 1, 2}},
-			"b": {"one": {1, 3}, "three": {0, 1}},
+	It("should rebalance using the round robin strategy", func() {
+		rrb := roundRobinBalancer{}
+		Expect(rrb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
+			"consumerA": {"topic1": {0, 2}, "topic2": {0, 1, 2}},
+			"consumerB": {"topic1": {1, 3}, "topic3": {0, 1}},
+		}))
+	})
+
+	It("should rebalance using the striped strategy", func() {
+		sb := stripedBalancer{}
+		Expect(sb.Rebalance(subject.topics)).To(Equal(map[string]map[string][]int32{
+			"consumerA": {"topic1": {0, 2}, "topic2": {0, 2}, "topic3": {1}},
+			"consumerB": {"topic1": {1, 3}, "topic2": {1}, "topic3": {0}},
 		}))
 	})
 
 })
 
-var _ = Describe("topicInfo", func() {
+var _ = Describe("Striped balancer", func() {
+	var subject *balancer
+
+	BeforeEach(func() {
+		client := &mockClient{
+			topics: map[string][]int32{
+				"topic1": {0, 1, 2, 3}, //c1 c2 c3 c4
+				"topic2": {0, 1},       //c1 c2
+				"topic3": {0, 1},       //c3 c4
+				"topic4": {0, 1},       //c1 c2
+				"topic5": {0, 1},       //c3 c4
+				"topic6": {0, 1},       //c1 c2
+				"topic7": {0, 1},       //c3 c4
+				"topic8": {0, 1},       //c1 c2
+			},
+		}
+
+		var err error
+		subject, err = newBalancerFromMeta(client, map[string]sarama.ConsumerGroupMemberMetadata{
+			"consumer1": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5", "topic6", "topic7", "topic8"}},
+			"consumer2": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5", "topic6", "topic7", "topic8"}},
+			"consumer3": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5", "topic6", "topic7", "topic8"}},
+			"consumer4": sarama.ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5", "topic6", "topic7", "topic8"}},
+		})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should parse from meta data", func() {
+		Expect(subject.topics).To(HaveLen(8))
+	})
+
+	It("should perform a striped rebalance", func() {
+		Expect(subject.Perform(StrategyStriped)).To(Equal(map[string]map[string][]int32{
+			"consumer1": {"topic1": {0}, "topic2": {0}, "topic4": {0}, "topic6": {0}, "topic8": {0}},
+			"consumer2": {"topic1": {1}, "topic2": {1}, "topic4": {1}, "topic6": {1}, "topic8": {1}},
+			"consumer3": {"topic1": {2}, "topic3": {0}, "topic5": {0}, "topic7": {0}},
+			"consumer4": {"topic1": {3}, "topic3": {1}, "topic5": {1}, "topic7": {1}},
+		}))
+	})
+})
+
+func reduceToSingleTopic(membersAndTopicPartitions map[string]map[string][]int32) map[string][]int32 {
+	ret := make(map[string][]int32)
+	for memberID, topicsAndPartitions := range membersAndTopicPartitions {
+		ret[memberID] = make([]int32, 0)
+		for _, partitions := range topicsAndPartitions {
+			ret[memberID] = append(ret[memberID], partitions...)
+		}
+	}
+	return ret
+}
+
+var _ = Describe("TopicInfo", func() {
 
 	DescribeTable("Ranges",
 		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			info := topicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			Expect(info.Ranges()).To(Equal(expected))
+			rb := rangeBalancer{}
+			info := TopicInfoGroup{"T1": TopicInfo{MemberIDs: memberIDs, Partitions: partitions}}
+			Expect(reduceToSingleTopic(rb.Rebalance(info))).To(Equal(expected))
 		},
 
 		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{
@@ -97,8 +166,9 @@ var _ = Describe("topicInfo", func() {
 
 	DescribeTable("RoundRobin",
 		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			info := topicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			Expect(info.RoundRobin()).To(Equal(expected))
+			info := TopicInfoGroup{"T1": TopicInfo{MemberIDs: memberIDs, Partitions: partitions}}
+			rrb := roundRobinBalancer{}
+			Expect(reduceToSingleTopic(rrb.Rebalance(info))).To(Equal(expected))
 		},
 
 		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{
