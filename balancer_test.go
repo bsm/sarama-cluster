@@ -43,8 +43,8 @@ var _ = Describe("balancer", func() {
 
 		var err error
 		subject, err = newBalancerFromMeta(client, map[string]sarama.ConsumerGroupMemberMetadata{
-			"b": sarama.ConsumerGroupMemberMetadata{Topics: []string{"three", "one"}},
-			"a": sarama.ConsumerGroupMemberMetadata{Topics: []string{"one", "two"}},
+			"b": {Topics: []string{"three", "one"}},
+			"a": {Topics: []string{"one", "two"}},
 		})
 		Expect(err).NotTo(HaveOccurred())
 	})

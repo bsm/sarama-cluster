@@ -19,7 +19,7 @@ type Config struct {
 		PartitionStrategy Strategy
 		Offsets           struct {
 			Retry struct {
-				// The numer retries when comitting offsets (defaults to 3).
+				// The numer retries when committing offsets (defaults to 3).
 				Max int
 			}
 		}
