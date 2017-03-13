@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	testKafkaRoot  = "kafka_2.11-0.10.1.1"
+	testKafkaRoot  = "kafka_2.12-0.10.2.0"
 	testKafkaAddrs = []string{"127.0.0.1:29092"}
 	testTopics     = []string{"topic-a", "topic-b"}
 
@@ -68,8 +68,10 @@ var _ = BeforeSuite(func() {
 		testDataDir("zookeeper.properties"),
 	)
 	testZkCmd.Env = []string{"KAFKA_HEAP_OPTS=-Xmx512M -Xms512M"}
-	// testZkCmd.Stderr = os.Stderr
-	// testZkCmd.Stdout = os.Stdout
+	if testing.Verbose() || os.Getenv("CI") != "" {
+		testZkCmd.Stderr = os.Stderr
+		testZkCmd.Stdout = os.Stdout
+	}
 
 	testKafkaCmd = exec.Command(
 		testDataDir(testKafkaRoot, "bin", "kafka-run-class.sh"),
@@ -77,8 +79,10 @@ var _ = BeforeSuite(func() {
 		testDataDir("server.properties"),
 	)
 	testKafkaCmd.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
-	// testKafkaCmd.Stderr = os.Stderr
-	// testKafkaCmd.Stdout = os.Stdout
+	if testing.Verbose() || os.Getenv("CI") != "" {
+		testKafkaCmd.Stderr = os.Stderr
+		testKafkaCmd.Stdout = os.Stdout
+	}
 
 	Expect(os.MkdirAll(testKafkaData, 0777)).NotTo(HaveOccurred())
 	Expect(testZkCmd.Start()).NotTo(HaveOccurred())
@@ -93,20 +97,22 @@ var _ = BeforeSuite(func() {
 		testConf.Producer.Return.Successes = true
 		testClient, err = sarama.NewClient(testKafkaAddrs, testConf)
 		return err
-	}, "10s", "1s").ShouldNot(HaveOccurred())
+	}, "30s", "1s").ShouldNot(HaveOccurred())
 
 	// Ensure we can retrieve partition info
 	Eventually(func() error {
 		_, err := testClient.Partitions(testTopics[0])
 		return err
-	}, "10s", "500ms").ShouldNot(HaveOccurred())
+	}, "30s", "1s").ShouldNot(HaveOccurred())
 
 	// Seed a few messages
 	Expect(testSeed(1000)).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
-	_ = testClient.Close()
+	if testClient != nil {
+		_ = testClient.Close()
+	}
 
 	_ = testKafkaCmd.Process.Kill()
 	_ = testZkCmd.Process.Kill()

@@ -92,18 +92,6 @@ func (c *partitionConsumer) State() partitionState {
 	return state
 }
 
-func (c *partitionConsumer) MarkCommitted(offset int64) {
-	if c == nil {
-		return
-	}
-
-	c.mu.Lock()
-	if offset == c.state.Info.Offset {
-		c.state.Dirty = false
-	}
-	c.mu.Unlock()
-}
-
 func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 	if c == nil {
 		return
@@ -113,7 +101,6 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 	if offset > c.state.Info.Offset {
 		c.state.Info.Offset = offset
 		c.state.Info.Metadata = metadata
-		c.state.Dirty = true
 	}
 	c.mu.Unlock()
 }
@@ -121,8 +108,7 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 // --------------------------------------------------------------------
 
 type partitionState struct {
-	Info  offsetInfo
-	Dirty bool
+	Info offsetInfo
 }
 
 // --------------------------------------------------------------------
@@ -161,18 +147,6 @@ func (m *partitionMap) Store(topic string, partition int32, pc *partitionConsume
 	m.mu.Lock()
 	m.data[topicPartition{topic, partition}] = pc
 	m.mu.Unlock()
-}
-
-func (m *partitionMap) HasDirty() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for _, pc := range m.data {
-		if state := pc.State(); state.Dirty {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *partitionMap) Snapshot() map[topicPartition]partitionState {

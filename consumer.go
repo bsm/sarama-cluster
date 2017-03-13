@@ -97,7 +97,7 @@ func (c *Consumer) Errors() <-chan error { return c.errors }
 func (c *Consumer) Notifications() <-chan *Notification { return c.notifications }
 
 // HighWaterMarks returns the current high water marks for each topic and partition
-// Consistency between partitions is not garanteed since high water marks are updated separately.
+// Consistency between partitions is not guaranteed since high water marks are updated separately.
 func (c *Consumer) HighWaterMarks() map[string]map[int32]int64 { return c.csmr.HighWaterMarks() }
 
 // MarkOffset marks the provided message as processed, alongside a metadata string
@@ -153,16 +153,9 @@ func (c *Consumer) CommitOffsets() error {
 		req.RetentionTime = int64(rt / time.Millisecond)
 	}
 
-	var dirty bool
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
-		if state.Dirty {
-			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
-			dirty = true
-		}
-	}
-	if !dirty {
-		return nil
+		req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)
@@ -177,17 +170,14 @@ func (c *Consumer) CommitOffsets() error {
 		return err
 	}
 
-	for topic, perrs := range resp.Errors {
-		for partition, kerr := range perrs {
-			if kerr != sarama.ErrNoError {
-				err = kerr
-			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
+	for _, errs := range resp.Errors {
+		for _, err := range errs {
+			if err != sarama.ErrNoError {
+				return err
 			}
 		}
 	}
-
-	return err
+	return nil
 }
 
 // Close safely closes the consumer and releases all resources
@@ -266,7 +256,7 @@ func (c *Consumer) mainLoop() {
 		twStop, twDone := make(chan none), make(chan none)
 		go c.twLoop(twStop, twDone)
 
-		// Start consuming and comitting offsets
+		// Start consuming and committing offsets
 		cmStop, cmDone := make(chan none), make(chan none)
 		go c.cmLoop(cmStop, cmDone)
 		atomic.StoreInt32(&c.consuming, 1)
@@ -730,7 +720,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	err := c.CommitOffsets()
-	if err != nil && retries > 0 && c.subs.HasDirty() {
+	if err != nil && retries > 0 {
 		return c.commitOffsetsWithRetry(retries - 1)
 	}
 	return err
