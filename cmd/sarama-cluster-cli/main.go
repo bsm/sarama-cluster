@@ -57,45 +57,41 @@ func main() {
 	if err != nil {
 		printErrorAndExit(69, "Failed to start consumer: %s", err)
 	}
+	defer consumer.Close()
 
-	go func() {
-		for err := range consumer.Errors() {
-			logger.Printf("Error: %s\n", err.Error())
+	// Create signal channel
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+
+	// Consume all channels, wait for signal to exit
+	for {
+		select {
+		case msg, more := <-consumer.Messages():
+			if more {
+				fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
+				consumer.MarkOffset(msg, "")
+			}
+		case ntf, more := <-consumer.Notifications():
+			if more {
+				logger.Printf("Rebalanced: %+v\n", ntf)
+			}
+		case err, more := <-consumer.Errors():
+			if more {
+				logger.Printf("Error: %s\n", err.Error())
+			}
+		case <-sigchan:
+			return
 		}
-	}()
-
-	go func() {
-		for note := range consumer.Notifications() {
-			logger.Printf("Rebalanced: %+v\n", note)
-		}
-	}()
-
-	go func() {
-		for msg := range consumer.Messages() {
-			fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
-			consumer.MarkOffset(msg, "")
-		}
-	}()
-
-	wait := make(chan os.Signal, 1)
-	signal.Notify(wait, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-	<-wait
-
-	if err := consumer.Close(); err != nil {
-		logger.Println("Failed to close consumer: ", err)
 	}
 }
 
 func printErrorAndExit(code int, format string, values ...interface{}) {
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", fmt.Sprintf(format, values...))
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n\n", values...)
 	os.Exit(code)
 }
 
 func printUsageErrorAndExit(format string, values ...interface{}) {
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", fmt.Sprintf(format, values...))
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Available command line options:")
-	flag.PrintDefaults()
+	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n\n", values...)
+	flag.Usage()
 	os.Exit(64)
 }
