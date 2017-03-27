@@ -29,7 +29,7 @@ func (s *OffsetStash) MarkPartitionOffset(topic string, partition int32, offset 
 	defer s.mu.Unlock()
 
 	key := topicPartition{Topic: topic, Partition: partition}
-	if info := s.offsets[key]; offset > info.Offset {
+	if info := s.offsets[key]; offset >= info.Offset {
 		info.Offset = offset
 		info.Metadata = metadata
 		s.offsets[key] = info
