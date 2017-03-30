@@ -13,6 +13,15 @@ var _ = Describe("OffsetStash", func() {
 	})
 
 	It("should update", func() {
+		Expect(subject.offsets).To(HaveLen(0))
+
+		subject.MarkPartitionOffset("topic", 0, 0, "m3ta")
+		Expect(subject.offsets).To(HaveLen(1))
+		Expect(subject.offsets).To(HaveKeyWithValue(
+			topicPartition{Topic: "topic", Partition: 0},
+			offsetInfo{Offset: 0, Metadata: "m3ta"},
+		))
+
 		subject.MarkPartitionOffset("topic", 0, 200, "m3ta")
 		Expect(subject.offsets).To(HaveLen(1))
 		Expect(subject.offsets).To(HaveKeyWithValue(
