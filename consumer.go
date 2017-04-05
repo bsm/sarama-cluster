@@ -89,12 +89,12 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 	return consumer, nil
 }
 
-// StartConsuming starts consuming messages, passing each message to the
+// Consume starts consuming messages, passing each message to the
 // user-supplied function.
 // The user-supplied function is run in a separate goroutine for each different
 // source partition, ensuring maximum throughput.
 // DO NOT call both this and Messages().
-func (c *Consumer) StartConsuming(f func(c <-chan *sarama.ConsumerMessage)) error {
+func (c *Consumer) Consume(f func(c <-chan *sarama.ConsumerMessage)) error {
 	// Lock to avoid a race condition with 2 simultaneous goroutines attempting
 	// to close the chan
 	c.consumeStartMu.Lock()
@@ -111,7 +111,7 @@ func (c *Consumer) StartConsuming(f func(c <-chan *sarama.ConsumerMessage)) erro
 
 // Messages returns the read channel for the messages that are returned by
 // the broker.
-// This is a convenience function, DO NOT call both this and StartConsuming.
+// This is a convenience function, DO NOT call both this and Consume().
 // This function always returns the same channel.
 func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
 
@@ -122,12 +122,12 @@ func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
 	// attempting to close c.messages.
 	var onceClose sync.Once
 
-	// StartConsuming with a closure, aggregating all partitions to fan-in chan.
+	// Consume with a closure, aggregating all partitions to fan-in chan.
 	// Ignore error to remain idempotent: Messages() may be called any number
 	// of times with similar behavior.
-	// This masks a potential error where StartConsuming() is called
+	// This masks a potential error where Consume() is called
 	// separately by the user.
-	c.StartConsuming(func(inCh <-chan *sarama.ConsumerMessage) {
+	c.Consume(func(inCh <-chan *sarama.ConsumerMessage) {
 		onceClose.Do(func() { go func() { c.Wait(); close(c.messages) }() })
 		for m := range inCh {
 			c.messages <- m
