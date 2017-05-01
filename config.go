@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/fanhattan/sarama"
 )
 
 var minVersion = sarama.V0_9_0_0
