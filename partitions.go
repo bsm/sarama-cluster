@@ -3,6 +3,7 @@ package cluster
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/Shopify/sarama"
 )
@@ -92,6 +93,19 @@ func (c *partitionConsumer) State() partitionState {
 	return state
 }
 
+func (c *partitionConsumer) MarkCommitted(offset int64, cTime time.Time) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	if offset == c.state.Info.Offset {
+		c.state.Dirty = false
+	}
+	c.state.LastCommit = cTime
+	c.mu.Unlock()
+}
+
 func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 	if c == nil {
 		return
@@ -101,6 +115,7 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 	if offset > c.state.Info.Offset {
 		c.state.Info.Offset = offset
 		c.state.Info.Metadata = metadata
+		c.state.Dirty = true
 	}
 	c.mu.Unlock()
 }
@@ -108,7 +123,9 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 // --------------------------------------------------------------------
 
 type partitionState struct {
-	Info offsetInfo
+	Info       offsetInfo
+	Dirty      bool
+	LastCommit time.Time
 }
 
 // --------------------------------------------------------------------

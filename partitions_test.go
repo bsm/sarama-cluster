@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -40,17 +42,34 @@ var _ = Describe("partitionConsumer", func() {
 	It("should update state", func() {
 		subject.MarkOffset(2001, "met@") // should set state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2001, "met@"},
+			Info:  offsetInfo{2001, "met@"},
+			Dirty: true,
+		}))
+
+		subject.MarkCommitted(2001, time.Unix(1515151515, 0)) // should reset dirty status
+		Expect(subject.State()).To(Equal(partitionState{
+			Info:       offsetInfo{2001, "met@"},
+			LastCommit: time.Unix(1515151515, 0),
 		}))
 
 		subject.MarkOffset(2001, "me7a") // should not update state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2001, "met@"},
+			Info:       offsetInfo{2001, "met@"},
+			LastCommit: time.Unix(1515151515, 0),
 		}))
 
 		subject.MarkOffset(2002, "me7a") // should bump state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2002, "me7a"},
+			Info:       offsetInfo{2002, "me7a"},
+			LastCommit: time.Unix(1515151515, 0),
+			Dirty:      true,
+		}))
+
+		subject.MarkCommitted(2001, time.Unix(1515151516, 0)) // should not unset state
+		Expect(subject.State()).To(Equal(partitionState{
+			Info:       offsetInfo{2002, "me7a"},
+			LastCommit: time.Unix(1515151516, 0),
+			Dirty:      true,
 		}))
 	})
 
@@ -59,6 +78,7 @@ var _ = Describe("partitionConsumer", func() {
 		Expect(func() {
 			_ = blank.State()
 			blank.MarkOffset(2001, "met@")
+			blank.MarkCommitted(2001, time.Unix(1515151515, 0))
 		}).NotTo(Panic())
 	})
 
@@ -107,8 +127,8 @@ var _ = Describe("partitionMap", func() {
 		subject.Fetch("topic", 1).MarkOffset(2001, "met@")
 
 		Expect(subject.Snapshot()).To(Equal(map[topicPartition]partitionState{
-			{"topic", 0}: {offsetInfo{2000, "m3ta"}},
-			{"topic", 1}: {offsetInfo{2001, "met@"}},
+			{"topic", 0}: {Info: offsetInfo{2000, "m3ta"}, Dirty: false},
+			{"topic", 1}: {Info: offsetInfo{2001, "met@"}, Dirty: true},
 		}))
 	})
 
