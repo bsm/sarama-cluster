@@ -93,7 +93,7 @@ func (c *partitionConsumer) State() partitionState {
 	return state
 }
 
-func (c *partitionConsumer) MarkCommitted(offset int64, cTime time.Time) {
+func (c *partitionConsumer) MarkCommitted(offset int64) {
 	if c == nil {
 		return
 	}
@@ -102,7 +102,6 @@ func (c *partitionConsumer) MarkCommitted(offset int64, cTime time.Time) {
 	if offset == c.state.Info.Offset {
 		c.state.Dirty = false
 	}
-	c.state.LastCommit = cTime
 	c.mu.Unlock()
 }
 

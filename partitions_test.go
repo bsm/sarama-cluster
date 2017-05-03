@@ -1,8 +1,6 @@
 package cluster
 
 import (
-	"time"
-
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -46,30 +44,26 @@ var _ = Describe("partitionConsumer", func() {
 			Dirty: true,
 		}))
 
-		subject.MarkCommitted(2001, time.Unix(1515151515, 0)) // should reset dirty status
+		subject.MarkCommitted(2001) // should reset dirty status
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:       offsetInfo{2001, "met@"},
-			LastCommit: time.Unix(1515151515, 0),
+			Info: offsetInfo{2001, "met@"},
 		}))
 
 		subject.MarkOffset(2001, "me7a") // should not update state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:       offsetInfo{2001, "met@"},
-			LastCommit: time.Unix(1515151515, 0),
+			Info: offsetInfo{2001, "met@"},
 		}))
 
 		subject.MarkOffset(2002, "me7a") // should bump state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:       offsetInfo{2002, "me7a"},
-			LastCommit: time.Unix(1515151515, 0),
-			Dirty:      true,
+			Info:  offsetInfo{2002, "me7a"},
+			Dirty: true,
 		}))
 
-		subject.MarkCommitted(2001, time.Unix(1515151516, 0)) // should not unset state
+		subject.MarkCommitted(2001) // should not unset state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:       offsetInfo{2002, "me7a"},
-			LastCommit: time.Unix(1515151516, 0),
-			Dirty:      true,
+			Info:  offsetInfo{2002, "me7a"},
+			Dirty: true,
 		}))
 	})
 
@@ -78,7 +72,7 @@ var _ = Describe("partitionConsumer", func() {
 		Expect(func() {
 			_ = blank.State()
 			blank.MarkOffset(2001, "met@")
-			blank.MarkCommitted(2001, time.Unix(1515151515, 0))
+			blank.MarkCommitted(2001)
 		}).NotTo(Panic())
 	})
 

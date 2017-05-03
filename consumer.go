@@ -149,15 +149,14 @@ func (c *Consumer) CommitOffsets() error {
 		RetentionTime:           -1,
 	}
 
-	ret := c.client.config.Consumer.Offsets.Retention
-	if ret != 0 {
-		req.RetentionTime = int64(ret / time.Millisecond)
+	if ns := c.client.config.Consumer.Offsets.Retention; ns != 0 {
+		req.RetentionTime = int64(ns / time.Millisecond)
 	}
 
 	snap := c.subs.Snapshot()
 	dirty := false
 	for tp, state := range snap {
-		if state.Dirty || (ret != 0 && time.Since(state.LastCommit)*2 > ret) {
+		if state.Dirty {
 			dirty = true
 			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
 		}
@@ -178,13 +177,12 @@ func (c *Consumer) CommitOffsets() error {
 		return err
 	}
 
-	now := time.Now()
 	for topic, errs := range resp.Errors {
 		for partition, kerr := range errs {
 			if kerr != sarama.ErrNoError {
 				err = kerr
 			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
-				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset, now)
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
 			}
 		}
 	}
