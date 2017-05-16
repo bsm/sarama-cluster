@@ -153,9 +153,16 @@ func (c *Consumer) CommitOffsets() error {
 		req.RetentionTime = int64(rt / time.Millisecond)
 	}
 
+	var dirty bool
 	snap := c.subs.Snapshot()
 	for tp, state := range snap {
-		req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+		if state.Dirty {
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+			dirty = true
+		}
+	}
+	if !dirty {
+		return nil
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)
@@ -170,14 +177,17 @@ func (c *Consumer) CommitOffsets() error {
 		return err
 	}
 
-	for _, errs := range resp.Errors {
-		for _, err := range errs {
-			if err != sarama.ErrNoError {
-				return err
+	for topic, perrs := range resp.Errors {
+		for partition, kerr := range perrs {
+			if kerr != sarama.ErrNoError {
+				err = kerr
+			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
 			}
 		}
 	}
-	return nil
+
+	return err
 }
 
 // Close safely closes the consumer and releases all resources
@@ -720,7 +730,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 
 func (c *Consumer) commitOffsetsWithRetry(retries int) error {
 	err := c.CommitOffsets()
-	if err != nil && retries > 0 {
+	if err != nil && retries > 0 && c.subs.HasDirty() {
 		return c.commitOffsetsWithRetry(retries - 1)
 	}
 	return err

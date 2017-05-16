@@ -22,7 +22,8 @@ var _ = Describe("partitionConsumer", func() {
 
 	It("should set state", func() {
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2000, "m3ta"},
+			Info:  offsetInfo{2000, "m3ta"},
+			Dirty: false,
 		}))
 	})
 
@@ -40,17 +41,32 @@ var _ = Describe("partitionConsumer", func() {
 	It("should update state", func() {
 		subject.MarkOffset(2001, "met@") // should set state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2001, "met@"},
+			Info:  offsetInfo{2001, "met@"},
+			Dirty: true,
+		}))
+
+		subject.MarkCommitted(2001) // should reset dirty status
+		Expect(subject.State()).To(Equal(partitionState{
+			Info:  offsetInfo{2001, "met@"},
+			Dirty: false,
 		}))
 
 		subject.MarkOffset(2001, "me7a") // should not update state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2001, "met@"},
+			Info:  offsetInfo{2001, "met@"},
+			Dirty: false,
 		}))
 
 		subject.MarkOffset(2002, "me7a") // should bump state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2002, "me7a"},
+			Info:  offsetInfo{2002, "me7a"},
+			Dirty: true,
+		}))
+
+		subject.MarkCommitted(2001) // should not unset state
+		Expect(subject.State()).To(Equal(partitionState{
+			Info:  offsetInfo{2002, "me7a"},
+			Dirty: true,
 		}))
 	})
 
@@ -59,6 +75,7 @@ var _ = Describe("partitionConsumer", func() {
 		Expect(func() {
 			_ = blank.State()
 			blank.MarkOffset(2001, "met@")
+			blank.MarkCommitted(2001)
 		}).NotTo(Panic())
 	})
 
@@ -107,8 +124,8 @@ var _ = Describe("partitionMap", func() {
 		subject.Fetch("topic", 1).MarkOffset(2001, "met@")
 
 		Expect(subject.Snapshot()).To(Equal(map[topicPartition]partitionState{
-			{"topic", 0}: {offsetInfo{2000, "m3ta"}},
-			{"topic", 1}: {offsetInfo{2001, "met@"}},
+			{"topic", 0}: {offsetInfo{2000, "m3ta"}, false},
+			{"topic", 1}: {offsetInfo{2001, "met@"}, true},
 		}))
 	})
 
