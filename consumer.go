@@ -276,6 +276,12 @@ func (c *Consumer) mainLoop() {
 			c.notifications <- notification
 		}
 
+		// If the ready channel is set, send the alert
+		if c.client.config.ConsumersReadyCh != nil {
+			close(c.client.config.ConsumersReadyCh)
+			c.client.config.ConsumersReadyCh = nil
+		}
+
 		// Wait for signals
 		select {
 		case <-hbDone:
