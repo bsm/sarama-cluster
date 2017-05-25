@@ -60,8 +60,10 @@ type Config struct {
 
 // NewConfig returns a new configuration instance with sane defaults.
 func NewConfig() *Config {
+	config := *sarama.NewConfig()
+	config.Version = sarama.V0_9_0_0
 	c := &Config{
-		Config: *sarama.NewConfig(),
+		Config: config,
 	}
 	c.Group.PartitionStrategy = StrategyRange
 	c.Group.Offsets.Retry.Max = 3
