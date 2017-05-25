@@ -136,7 +136,7 @@ func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
 }
 
-// CommitOffsets manually commits marked offsets
+// CommitOffsets manually commits marked offsets.
 func (c *Consumer) CommitOffsets() error {
 	c.commitMu.Lock()
 	defer c.commitMu.Unlock()
@@ -149,13 +149,20 @@ func (c *Consumer) CommitOffsets() error {
 		RetentionTime:           -1,
 	}
 
-	if rt := c.client.config.Consumer.Offsets.Retention; rt != 0 {
-		req.RetentionTime = int64(rt / time.Millisecond)
+	if ns := c.client.config.Consumer.Offsets.Retention; ns != 0 {
+		req.RetentionTime = int64(ns / time.Millisecond)
 	}
 
 	snap := c.subs.Snapshot()
+	dirty := false
 	for tp, state := range snap {
-		req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+		if state.Dirty {
+			dirty = true
+			req.AddBlock(tp.Topic, tp.Partition, state.Info.Offset, 0, state.Info.Metadata)
+		}
+	}
+	if !dirty {
+		return nil
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)
@@ -170,14 +177,16 @@ func (c *Consumer) CommitOffsets() error {
 		return err
 	}
 
-	for _, errs := range resp.Errors {
-		for _, err := range errs {
-			if err != sarama.ErrNoError {
-				return err
+	for topic, errs := range resp.Errors {
+		for partition, kerr := range errs {
+			if kerr != sarama.ErrNoError {
+				err = kerr
+			} else if state, ok := snap[topicPartition{topic, partition}]; ok {
+				c.subs.Fetch(topic, partition).MarkCommitted(state.Info.Offset)
 			}
 		}
 	}
-	return nil
+	return err
 }
 
 // Close safely closes the consumer and releases all resources
