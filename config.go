@@ -24,7 +24,7 @@ type Config struct {
 			}
 			Synchronization struct {
 				// The duration allowed for other clients to commit their offsets before resumption in this client, e.g. during a rebalance
-				// By defaults, points to the Consumer.MaxProcessingTime duration of the Sarama configuration
+				// By default, points to the Consumer.MaxProcessingTime duration of the Sarama configuration
 				DwellTime *time.Duration
 			}
 		}
@@ -93,6 +93,9 @@ func (c *Config) Validate() error {
 		sarama.Logger.Println("Version is not supported; 0.9. will be assumed.")
 		c.Version = minVersion
 	}
+	if c.Group.Offsets.Synchronization.DwellTime == nil {
+		c.Group.Offsets.Synchronization.DwellTime = &c.Consumer.MaxProcessingTime // Someone may have instantiated Config without NewConfig(), so set a sensible non-nil value
+	}
 	if err := c.Config.Validate(); err != nil {
 		return err
 	}
@@ -101,9 +104,7 @@ func (c *Config) Validate() error {
 	switch {
 	case c.Group.Offsets.Retry.Max < 0:
 		return sarama.ConfigurationError("Group.Offsets.Retry.Max must be >= 0")
-	case c.Group.Offsets.Synchronization.DwellTime == nil:
-		c.Group.Offsets.Synchronization.DwellTime = &c.Consumer.MaxProcessingTime // Someone may have instantiated Config without NewConfig(), so set a sensible non-nil value
-	case c.Group.Offsets.Synchronization.DwellTime != nil && *(c.Group.Offsets.Synchronization.DwellTime) > time.Minute*10:
+	case c.Group.Offsets.Synchronization.DwellTime == nil || *(c.Group.Offsets.Synchronization.DwellTime) > time.Minute*10:
 		return sarama.ConfigurationError("Group.Offsets.Synchronization.DwellTime should be less than ten minutes")
 	case c.Group.Heartbeat.Interval <= 0:
 		return sarama.ConfigurationError("Group.Heartbeat.Interval must be > 0")
