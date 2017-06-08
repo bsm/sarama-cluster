@@ -22,6 +22,11 @@ type Config struct {
 				// The numer retries when committing offsets (defaults to 3).
 				Max int
 			}
+			Synchronization struct {
+				// The duration allowed for other clients to commit their offsets before resumption in this client, e.g. during a rebalance
+				// By defaults, points to the Consumer.MaxProcessingTime duration of the Sarama configuration
+				DwellTime *time.Duration
+			}
 		}
 		Session struct {
 			// The allowed session timeout for registered consumers (defaults to 30s).
@@ -65,6 +70,7 @@ func NewConfig() *Config {
 	}
 	c.Group.PartitionStrategy = StrategyRange
 	c.Group.Offsets.Retry.Max = 3
+	c.Group.Offsets.Synchronization.DwellTime = &c.Consumer.MaxProcessingTime
 	c.Group.Session.Timeout = 30 * time.Second
 	c.Group.Heartbeat.Interval = 3 * time.Second
 	c.Config.Version = minVersion
@@ -95,6 +101,10 @@ func (c *Config) Validate() error {
 	switch {
 	case c.Group.Offsets.Retry.Max < 0:
 		return sarama.ConfigurationError("Group.Offsets.Retry.Max must be >= 0")
+	case c.Group.Offsets.Synchronization.DwellTime == nil:
+		c.Group.Offsets.Synchronization.DwellTime = &c.Consumer.MaxProcessingTime // Someone may have instantiated Config without NewConfig(), so set a sensible non-nil value
+	case c.Group.Offsets.Synchronization.DwellTime != nil && *(c.Group.Offsets.Synchronization.DwellTime) > time.Minute*10:
+		return sarama.ConfigurationError("Group.Offsets.Synchronization.DwellTime should be less than ten minutes")
 	case c.Group.Heartbeat.Interval <= 0:
 		return sarama.ConfigurationError("Group.Heartbeat.Interval must be > 0")
 	case c.Group.Session.Timeout <= 0:

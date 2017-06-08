@@ -416,7 +416,7 @@ func (c *Consumer) release() (err error) {
 	defer c.subs.Clear()
 
 	// Wait for messages to be processed
-	time.Sleep(c.client.config.Consumer.MaxProcessingTime)
+	time.Sleep(*(c.client.config.Group.Offsets.Synchronization.DwellTime))
 
 	// Commit offsets, continue on errors
 	if e := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); e != nil {
@@ -659,7 +659,7 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 	}
 
 	// Wait for other cluster consumers to process, release and commit
-	time.Sleep(c.client.config.Consumer.MaxProcessingTime * 2)
+	time.Sleep(*(c.client.config.Group.Offsets.Synchronization.DwellTime) * 2)
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
