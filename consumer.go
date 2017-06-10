@@ -417,8 +417,8 @@ func (c *Consumer) release() (err error) {
 
 	// Wait for messages to be processed
 	select {
-		case <-c.dying:
-		case <-time.After(c.client.config.Group.Offsets.Synchronization.DwellTime):
+	case <-c.dying:
+	case <-time.After(c.client.config.Group.Offsets.Synchronization.DwellTime):
 	}
 
 	// Commit offsets, continue on errors
@@ -662,12 +662,16 @@ func (c *Consumer) fetchOffsets(subs map[string][]int32) (map[string]map[int32]o
 	}
 
 	// Wait for other cluster consumers to process, release and commit
-	// Times-two so that we are less likely to "win" a race against a sarama-cluster client that is: 
+	// Times-two so that we are less likely to "win" a race against a sarama-cluster client that is:
 	// 1) losing a topic-partition in a rebalance, and therefore:
 	// 2) sleeping to allow some processing to complete, before:
-	// 3) committing the offsets. 
-	// Note that this doesn't necessarily account for the end-to-end latency of the Kafka offsets topic.  
-	time.Sleep(c.client.config.Group.Offsets.Synchronization.DwellTime * 2)
+	// 3) committing the offsets.
+	// Note that this doesn't necessarily account for the end-to-end latency of the Kafka offsets topic.
+	select {
+	case <-c.dying:
+		return nil, sarama.ErrClosedClient
+	case <-time.After(c.client.config.Group.Offsets.Synchronization.DwellTime * 2):
+	}
 
 	broker, err := c.client.Coordinator(c.groupID)
 	if err != nil {
