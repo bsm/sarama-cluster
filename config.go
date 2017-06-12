@@ -101,8 +101,10 @@ func (c *Config) Validate() error {
 	switch {
 	case c.Group.Offsets.Retry.Max < 0:
 		return sarama.ConfigurationError("Group.Offsets.Retry.Max must be >= 0")
-	case c.Group.Offsets.Synchronization.DwellTime > time.Minute*10:
-		return sarama.ConfigurationError("Group.Offsets.Synchronization.DwellTime should be less than ten minutes")
+	case c.Group.Offsets.Synchronization.DwellTime <= 0:
+		return sarama.ConfigurationError("Group.Offsets.Synchronization.DwellTime must be > 0")
+	case c.Group.Offsets.Synchronization.DwellTime > 10*time.Minute:
+		return sarama.ConfigurationError("Group.Offsets.Synchronization.DwellTime must be <= 10m")
 	case c.Group.Heartbeat.Interval <= 0:
 		return sarama.ConfigurationError("Group.Heartbeat.Interval must be > 0")
 	case c.Group.Session.Timeout <= 0:
