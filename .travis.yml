@@ -4,7 +4,7 @@ go:
   - 1.8.3
   - 1.7.6
 install:
-  - go get -u github.com/golang/dep/
+  - go get -u github.com/golang/dep/cmd/dep
   - dep install
 env:
   - SCALA_VERSION=2.11 KAFKA_VERSION=0.9.0.1
