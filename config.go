@@ -60,6 +60,8 @@ type Config struct {
 			// coordinator for the group.
 			UserData []byte
 		}
+
+		PartitionHandlerFn PartitionHandlerFunc
 	}
 }
 

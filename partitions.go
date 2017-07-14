@@ -10,6 +10,7 @@ import (
 
 type partitionConsumer struct {
 	pcm sarama.PartitionConsumer
+	ph  PartitionHandler
 
 	state partitionState
 	mu    sync.Mutex
@@ -18,7 +19,7 @@ type partitionConsumer struct {
 	dying, dead chan none
 }
 
-func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32, info offsetInfo, defaultOffset int64) (*partitionConsumer, error) {
+func newPartitionConsumer(manager sarama.Consumer, ph PartitionHandler, topic string, partition int32, info offsetInfo, defaultOffset int64) (*partitionConsumer, error) {
 	pcm, err := manager.ConsumePartition(topic, partition, info.NextOffset(defaultOffset))
 
 	// Resume from default offset, if requested offset is out-of-range
@@ -32,6 +33,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 
 	return &partitionConsumer{
 		pcm:   pcm,
+		ph:    ph,
 		state: partitionState{Info: info},
 
 		dying: make(chan none),
@@ -39,8 +41,11 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 	}, nil
 }
 
-func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+func (c *partitionConsumer) Loop() {
 	defer close(c.dead)
+
+	messages := c.ph.Messages()
+	errors := c.ph.Errors()
 
 	for {
 		select {
@@ -77,6 +82,7 @@ func (c *partitionConsumer) Close() error {
 	c.closed = true
 	close(c.dying)
 	<-c.dead
+	c.ph.Close(err)
 
 	return err
 }
@@ -131,6 +137,7 @@ type partitionState struct {
 
 type partitionMap struct {
 	data map[topicPartition]*partitionConsumer
+	ph   PartitionHandler
 	mu   sync.RWMutex
 }
 
