@@ -113,6 +113,10 @@ func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset+1, metadata)
 }
 
+func (c *Consumer) MarkDone(msg *sarama.ConsumerMessage, metadata string) {
+	c.subs.Fetch(msg.Topic, msg.Partition).MarkDone(msg.Offset+1, metadata)
+}
+
 // MarkPartitionOffset marks an offset of the provided topic/partition as processed.
 // See MarkOffset for additional explanation.
 func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
@@ -733,7 +737,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
-	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
+	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial, c.client.config.Group.Sync)
 	if err != nil {
 		return err
 	}

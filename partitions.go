@@ -14,11 +14,13 @@ type partitionConsumer struct {
 	state partitionState
 	mu    sync.Mutex
 
+	syncSem chan bool
+
 	closed      bool
 	dying, dead chan none
 }
 
-func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32, info offsetInfo, defaultOffset int64) (*partitionConsumer, error) {
+func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32, info offsetInfo, defaultOffset int64, sync bool) (*partitionConsumer, error) {
 	pcm, err := manager.ConsumePartition(topic, partition, info.NextOffset(defaultOffset))
 
 	// Resume from default offset, if requested offset is out-of-range
@@ -30,13 +32,20 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 		return nil, err
 	}
 
-	return &partitionConsumer{
+	pc := &partitionConsumer{
 		pcm:   pcm,
 		state: partitionState{Info: info},
 
 		dying: make(chan none),
 		dead:  make(chan none),
-	}, nil
+	}
+
+	// Sync semaphore
+	if sync {
+		pc.syncSem = make(chan bool, 1)
+	}
+
+	return pc, nil
 }
 
 func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
@@ -47,6 +56,14 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 		case msg, ok := <-c.pcm.Messages():
 			if !ok {
 				return
+			}
+			// Try to lock sync semaphore
+			if c.syncSem != nil {
+				select {
+				case c.syncSem <- true:
+				case <-c.dying:
+					return
+				}
 			}
 			select {
 			case messages <- msg:
@@ -117,6 +134,22 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 		c.state.Dirty = true
 	}
 	c.mu.Unlock()
+}
+
+func (c *partitionConsumer) MarkDone(offset int64, metadata string) {
+	if c == nil {
+		return
+	}
+
+	c.MarkOffset(offset, metadata)
+
+	// Release sync semaphore
+	if c.syncSem != nil {
+		select {
+		case <-c.syncSem:
+		default:
+		}
+	}
 }
 
 // --------------------------------------------------------------------
