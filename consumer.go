@@ -55,7 +55,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		messages:      make(chan *sarama.ConsumerMessage),
-		notifications: make(chan *Notification, 1),
+		notifications: make(chan *Notification),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
 		return nil, err
@@ -261,6 +261,12 @@ func (c *Consumer) mainLoop() {
 			continue
 		}
 
+		// Update/issue notification with new claims
+		if c.client.config.Group.Return.Notifications {
+			notification.claim(subs)
+			c.handleNotification(notification)
+		}
+
 		// Start topic watcher loop
 		twStop, twDone := make(chan none), make(chan none)
 		go c.twLoop(twStop, twDone)
@@ -269,12 +275,6 @@ func (c *Consumer) mainLoop() {
 		cmStop, cmDone := make(chan none), make(chan none)
 		go c.cmLoop(cmStop, cmDone)
 		atomic.StoreInt32(&c.consuming, 1)
-
-		// Update notification with new claims
-		if c.client.config.Group.Return.Notifications {
-			notification.claim(subs)
-			c.notifications <- notification
-		}
 
 		// Wait for signals
 		select {
@@ -378,10 +378,8 @@ func (c *Consumer) cmLoop(stop <-chan none, done chan<- none) {
 	}
 }
 
-func (c *Consumer) rebalanceError(err error, notification *Notification) {
-	if c.client.config.Group.Return.Notifications {
-		c.notifications <- notification
-	}
+func (c *Consumer) rebalanceError(err error, n *Notification) {
+	c.handleNotification(n)
 
 	switch err {
 	case sarama.ErrRebalanceInProgress:
@@ -392,6 +390,16 @@ func (c *Consumer) rebalanceError(err error, notification *Notification) {
 	select {
 	case <-c.dying:
 	case <-time.After(c.client.config.Metadata.Retry.Backoff):
+	}
+}
+
+func (c *Consumer) handleNotification(n *Notification) {
+	if n != nil && c.client.config.Group.Return.Notifications {
+		select {
+		case c.notifications <- n:
+		case <-c.dying:
+			return
+		}
 	}
 }
 

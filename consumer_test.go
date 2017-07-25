@@ -143,6 +143,35 @@ var _ = Describe("Consumer", func() {
 		}))
 	})
 
+	It("should receive rebalance notifications", func() {
+		config := NewConfig()
+		config.Consumer.Return.Errors = true
+		config.Group.Return.Notifications = true
+
+		cs, err := NewConsumer(testKafkaAddrs, testGroup, testTopics, config)
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+
+		select {
+		case n := <-cs.Notifications():
+			Expect(n).To(Equal(&Notification{
+				Claimed: map[string][]int32{
+					"topic-a": {0, 1, 2, 3},
+					"topic-b": {0, 1, 2, 3},
+				},
+				Released: map[string][]int32{},
+				Current: map[string][]int32{
+					"topic-a": {0, 1, 2, 3},
+					"topic-b": {0, 1, 2, 3},
+				},
+			}))
+		case err := <-cs.Errors():
+			Expect(err).NotTo(HaveOccurred())
+		case <-cs.Messages():
+			Fail("expected a notification to arrive before message")
+		}
+	})
+
 	It("should support manual mark/commit", func() {
 		cs, err := newConsumerOf(testGroup, "topic-a")
 		Expect(err).NotTo(HaveOccurred())
