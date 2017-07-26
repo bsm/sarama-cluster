@@ -271,6 +271,10 @@ func (c *Consumer) mainLoop() {
 		twStop, twDone := make(chan none), make(chan none)
 		go c.twLoop(twStop, twDone)
 
+		// Start partition watcher loop
+		pwStop, pwDone := make(chan none), make(chan none)
+		go c.pwLoop(pwStop, pwDone)
+
 		// Start consuming and committing offsets
 		cmStop, cmDone := make(chan none), make(chan none)
 		go c.cmLoop(cmStop, cmDone)
@@ -281,25 +285,65 @@ func (c *Consumer) mainLoop() {
 		case <-hbDone:
 			close(cmStop)
 			close(twStop)
+			close(pwStop)
 			<-cmDone
 			<-twDone
+			<-pwDone
 		case <-twDone:
 			close(cmStop)
 			close(hbStop)
+			close(pwStop)
 			<-cmDone
 			<-hbDone
+			<-pwDone
+		case <-pwDone:
+			close(cmStop)
+			close(hbStop)
+			close(twStop)
+			<-cmDone
+			<-hbDone
+			<-twDone
 		case <-cmDone:
 			close(twStop)
 			close(hbStop)
+			close(pwStop)
 			<-twDone
 			<-hbDone
+			<-pwDone
 		case <-c.dying:
 			close(cmStop)
 			close(twStop)
 			close(hbStop)
+			close(pwStop)
 			<-cmDone
 			<-twDone
 			<-hbDone
+			<-pwDone
+			return
+		}
+	}
+}
+
+// partition watcher loop, triggered by the main loop
+// it look for new partition and rebalance the consumers
+func (c *Consumer) pwLoop(stop <-chan none, done chan<- none) {
+	defer close(done)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			for k, v := range c.Subscriptions() {
+				ps, err := c.client.Partitions(k)
+				if err != nil {
+					c.handleError(&Error{Ctx: "topics", error: err})
+				} else {
+					if len(v) < len(ps) {
+						return
+					}
+				}
+			}
+		case <-stop:
 			return
 		}
 	}
