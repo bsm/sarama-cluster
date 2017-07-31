@@ -11,7 +11,7 @@ type PartitionHandler interface {
 }
 
 // PartitionHandlerFunc is a function to be called when a new partition for the group.
-type PartitionHandlerFunc func(topic string, partition int32, offset int64, metadata string) PartitionHandler
+type PartitionHandlerFunc func(consumer *Consumer, topic string, partition int32, offset int64, metadata string) PartitionHandler
 
 // partitionHandler is a default implementation of the PartitionHandler
 // interface.

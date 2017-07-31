@@ -729,7 +729,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 
 	var ph PartitionHandler
 	if fn := c.client.config.Group.PartitionHandlerFn; fn != nil {
-		ph = fn(topic, partition, info.Offset, info.Metadata)
+		ph = fn(c, topic, partition, info.Offset, info.Metadata)
 	} else {
 		ph = &partitionHandler{messages: c.messages, errors: c.errors}
 	}
