@@ -130,11 +130,13 @@ func testSeed(n int) error {
 	}
 	defer producer.Close()
 
-	kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-	for _, t := range testTopics {
-		msg := &sarama.ProducerMessage{Topic: t, Key: kv, Value: kv}
-		if _, _, err := producer.SendMessage(msg); err != nil {
-			return err
+	for i := 0; i < n; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		for _, t := range testTopics {
+			msg := &sarama.ProducerMessage{Topic: t, Key: kv, Value: kv}
+			if _, _, err := producer.SendMessage(msg); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
