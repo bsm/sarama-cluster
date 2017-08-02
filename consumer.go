@@ -328,7 +328,7 @@ func (c *Consumer) mainLoop() {
 // it look for new partition and rebalance the consumers
 func (c *Consumer) pwLoop(stop <-chan none, done chan<- none) {
 	defer close(done)
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency / 2)
 	defer ticker.Stop()
 	for {
 		select {
