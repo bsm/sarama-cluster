@@ -155,6 +155,20 @@ var _ = Describe("Consumer", func() {
 		select {
 		case n := <-cs.Notifications():
 			Expect(n).To(Equal(&Notification{
+				Claimed:             nil,
+				Released:            nil,
+				Current:             nil,
+				RebalanceInProgress: true,
+			}))
+		case err := <-cs.Errors():
+			Expect(err).NotTo(HaveOccurred())
+		case <-cs.Messages():
+			Fail("expected a notification to arrive before message")
+		}
+
+		select {
+		case n := <-cs.Notifications():
+			Expect(n).To(Equal(&Notification{
 				Claimed: map[string][]int32{
 					"topic-a": {0, 1, 2, 3},
 					"topic-b": {0, 1, 2, 3},
@@ -164,6 +178,7 @@ var _ = Describe("Consumer", func() {
 					"topic-a": {0, 1, 2, 3},
 					"topic-b": {0, 1, 2, 3},
 				},
+				RebalanceInProgress: false,
 			}))
 		case err := <-cs.Errors():
 			Expect(err).NotTo(HaveOccurred())

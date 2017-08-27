@@ -17,6 +17,9 @@ type Notification struct {
 
 	// Current are topic/partitions that are currently claimed to the consumer
 	Current map[string][]int32
+
+	// Notification that rebalance is in progress
+	RebalanceInProgress bool
 }
 
 func newNotification(released map[string][]int32) *Notification {
