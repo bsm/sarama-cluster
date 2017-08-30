@@ -798,10 +798,27 @@ func (c *Consumer) isPotentialExtraTopic(topic string) bool {
 }
 
 func (c *Consumer) refreshMetadata() error {
-	err := c.client.RefreshMetadata()
-	if err == sarama.ErrTopicAuthorizationFailed {
-		// maybe we didn't have authorization to describe all topics
-		err = c.client.RefreshMetadata(c.coreTopics...)
+	topics := []string{}
+	if c.client.Config().Metadata.Full == true {
+		err := c.client.RefreshMetadata(topics...)
+		if err == sarama.ErrTopicAuthorizationFailed {
+			// maybe we didn't have authorization to describe all topics
+			err = c.client.RefreshMetadata(c.coreTopics...)
+		}
+		return err
+	} else {
+		if specificTopics, err := c.client.Topics(); err != nil {
+		} else {
+			topics = specificTopics
+		}
+		if len(topics) > 0 {
+			err := c.client.RefreshMetadata(topics...)
+			if err == sarama.ErrTopicAuthorizationFailed {
+				// maybe we didn't have authorization to describe all topics
+				err = c.client.RefreshMetadata(c.coreTopics...)
+			}
+			return err
+		}
 	}
-	return err
+	return nil
 }
