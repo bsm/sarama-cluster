@@ -109,6 +109,10 @@ func (c *Config) Validate() error {
 		return sarama.ConfigurationError("Group.Heartbeat.Interval must be > 0")
 	case c.Group.Session.Timeout <= 0:
 		return sarama.ConfigurationError("Group.Session.Timeout must be > 0")
+	case !c.Metadata.Full && c.Group.Topics.Whitelist != nil:
+		return sarama.ConfigurationError("Metadata.Full must be enabled when Group.Topics.Whitelist is used")
+	case !c.Metadata.Full && c.Group.Topics.Blacklist != nil:
+		return sarama.ConfigurationError("Metadata.Full must be enabled when Group.Topics.Blacklist is used")
 	}
 
 	// ensure offset is correct
