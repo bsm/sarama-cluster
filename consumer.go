@@ -24,7 +24,7 @@ type Consumer struct {
 	coreTopics  []string
 	extraTopics []string
 
-	dying, dead chan none
+	dying, dead, done chan none
 
 	consuming     int32
 	errors        chan error
@@ -52,6 +52,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 		dying: make(chan none),
 		dead:  make(chan none),
+		done:  make(chan none),
 
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		messages:      make(chan *sarama.ConsumerMessage),
@@ -128,6 +129,14 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 	for tp, info := range s.offsets {
 		c.subs.Fetch(tp.Topic, tp.Partition).MarkOffset(info.Offset+1, info.Metadata)
 		delete(s.offsets, tp)
+	}
+}
+
+// Mark consumers as done, this allows blocked rebalance to proceed earlier than DwellTime
+func (c *Consumer) MarkConsumersDone() {
+	select {
+	case c.done <- none{}:
+	default:
 	}
 }
 
@@ -218,6 +227,7 @@ func (c *Consumer) Close() (err error) {
 			err = e
 		}
 	}
+	close(c.done)
 
 	return
 }
@@ -424,7 +434,9 @@ func (c *Consumer) release() (err error) {
 	defer c.subs.Clear()
 
 	// Wait for messages to be processed
+	c.handleNotification(&Notification{RebalanceInProgress: true})
 	select {
+	case <-c.done:
 	case <-c.dying:
 	case <-time.After(c.client.config.Group.Offsets.Synchronization.DwellTime):
 	}
