@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"regexp"
 
+	"time"
+
+	"strconv"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -238,6 +242,41 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
+	})
+
+	It("metadata refresh should be allowed to subscribe to partitions via white/black-lists", func() {
+
+		config := NewConfig()
+		config.Metadata.RefreshFrequency = time.Second * 10
+		config.Consumer.Return.Errors = true
+		config.Metadata.Full = false
+		config.Group.Topics.Whitelist = regexp.MustCompile(`mytest-\w+`)
+		config.Group.Topics.Blacklist = regexp.MustCompile(`[bcd]$`)
+
+		cs, err := NewConsumer(testKafkaAddrs, testGroup+time.Now().String(), nil, config)
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+
+		newtopic := "mytest-" + strconv.Itoa(time.Now().Nanosecond())
+		testTopics = append(testTopics, newtopic)
+		Expect(testSeed(10)).NotTo(HaveOccurred())
+
+		fmt.Println("new topic is ", newtopic)
+
+		time.Sleep(time.Second * 20)
+
+		topics, err := cs.client.Topics()
+		Expect(err).NotTo(HaveOccurred())
+
+		foundTopic := false
+		for _, topic := range topics {
+
+			if topic == newtopic {
+				foundTopic = true
+			}
+		}
+
+		Expect(foundTopic).To(BeEquivalentTo(true))
 	})
 
 })
