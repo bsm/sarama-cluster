@@ -14,7 +14,7 @@ type partitionConsumer struct {
 	state partitionState
 	mu    sync.Mutex
 
-	closed      bool
+	once        sync.Once
 	dying, dead chan none
 }
 
@@ -39,7 +39,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 	}, nil
 }
 
-func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+func (c *partitionConsumer) Loop(stopper <-chan none, messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
 	defer close(c.dead)
 
 	for {
@@ -50,6 +50,8 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 			}
 			select {
 			case messages <- msg:
+			case <-stopper:
+				return
 			case <-c.dying:
 				return
 			}
@@ -59,25 +61,25 @@ func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors
 			}
 			select {
 			case errors <- err:
+			case <-stopper:
+				return
 			case <-c.dying:
 				return
 			}
+		case <-stopper:
+			return
 		case <-c.dying:
 			return
 		}
 	}
 }
 
-func (c *partitionConsumer) Close() error {
-	if c.closed {
-		return nil
-	}
-
-	err := c.pcm.Close()
-	c.closed = true
-	close(c.dying)
+func (c *partitionConsumer) Close() (err error) {
+	c.once.Do(func() {
+		err = c.pcm.Close()
+		close(c.dying)
+	})
 	<-c.dead
-
 	return err
 }
 
