@@ -20,6 +20,27 @@ const (
 	//   C1: [0, 2, 4]
 	//   C2: [1, 3, 5]
 	StrategyRoundRobin Strategy = "roundrobin"
+
+	// StrategyStriped stripes partitions across consumers, distributing partitions
+	// evenly across a set of consumers
+	// Given topics with partitions:
+	//    T1: [0, 1, 2, 3]
+	//    T2: [0, 1]
+	//    T3: [0, 1]
+	//    T4: [0, 1]
+	// And consumers C1-C4, balance would be:
+	//    C1: T1: [0], T2: [0], T4: [0]
+	//    C2: T1: [1], T2: [1], T4: [1]
+	//    C3: T1: [2], T3: [0]
+	//    C4: T1: [3], T3: [1]
+	// Note that StrategyStriped expects all consumers to consume from the same set
+	// of topics.  It will combine all members' subscribed topics into a single set and
+	// distribute partitions to consumers evenly.
+	StrategyStriped Strategy = "striped"
+
+	// StrategyTopic partitions topics evenly amongst consumers.  A consumer is guaranteed to
+	// have all partitions for a topic.
+	StrategyTopic Strategy = "topic"
 )
 
 // Error instances are wrappers for internal errors with a context and

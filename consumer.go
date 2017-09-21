@@ -559,13 +559,12 @@ func (c *Consumer) joinGroup() (*balancer, error) {
 		Topics:   append(c.coreTopics, c.extraTopics...),
 		UserData: c.client.config.Group.Member.UserData,
 	}
-	err := req.AddGroupProtocolMetadata(string(StrategyRange), meta)
-	if err != nil {
-		return nil, err
-	}
-	err = req.AddGroupProtocolMetadata(string(StrategyRoundRobin), meta)
-	if err != nil {
-		return nil, err
+
+	for _, strat := range []Strategy{StrategyRange, StrategyRoundRobin, StrategyStriped, StrategyTopic} {
+		err := req.AddGroupProtocolMetadata(string(strat), meta)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	broker, err := c.client.Coordinator(c.groupID)
