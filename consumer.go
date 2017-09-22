@@ -57,6 +57,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		messages:      make(chan *sarama.ConsumerMessage),
 		notifications: make(chan *Notification),
 	}
+
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
 		return nil, err
 	}
@@ -83,7 +84,9 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 
 // Messages returns the read channel for the messages that are returned by
 // the broker.
-func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages }
+func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
+	return c.messages
+}
 
 // Errors returns a read channel of errors that occur during offset management, if
 // enabled. By default, errors are logged and not returned over this channel. If
@@ -720,8 +723,15 @@ func (c *Consumer) leaveGroup() error {
 func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
+	var ph PartitionHandler
+	if fn := c.client.config.Group.PartitionHandlerFn; fn != nil {
+		ph = fn(c, topic, partition, info.Offset, info.Metadata)
+	} else {
+		ph = &partitionHandler{messages: c.messages, errors: c.errors}
+	}
+
 	// Create partitionConsumer
-	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
+	pc, err := newPartitionConsumer(c.csmr, ph, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
 	if err != nil {
 		return err
 	}
@@ -730,7 +740,7 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	c.subs.Store(topic, partition, pc)
 
 	// Start partition consumer goroutine
-	go pc.Loop(c.messages, c.errors)
+	go pc.Loop()
 
 	return nil
 }
