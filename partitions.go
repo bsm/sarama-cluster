@@ -41,6 +41,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 
 func (c *partitionConsumer) Loop(messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
 	defer close(c.dead)
+	defer close(messages)
 
 	for {
 		select {

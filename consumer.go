@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"errors"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,11 @@ type Consumer struct {
 	messages      chan *sarama.ConsumerMessage
 	notifications chan *Notification
 
+	consumeStart   chan none
+	consumeStartMu sync.Mutex
+	consumeFunc    func(<-chan *sarama.ConsumerMessage)
+	consumeWG      sync.WaitGroup
+
 	commitMu sync.Mutex
 }
 
@@ -52,6 +58,8 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 		dying: make(chan none),
 		dead:  make(chan none),
+
+		consumeStart: make(chan none),
 
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		messages:      make(chan *sarama.ConsumerMessage),
@@ -81,9 +89,59 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 	return consumer, nil
 }
 
+// Consume starts consuming messages, passing each message to the
+// user-supplied function.
+// The user-supplied function is run in a separate goroutine for each different
+// source partition, ensuring maximum throughput.
+// DO NOT call both this and Messages().
+func (c *Consumer) Consume(f func(c <-chan *sarama.ConsumerMessage)) error {
+	// Lock to avoid a race condition with 2 simultaneous goroutines attempting
+	// to close the chan
+	c.consumeStartMu.Lock()
+	defer c.consumeStartMu.Unlock()
+	select {
+	case <-c.consumeStart:
+		return errors.New("Already started consuming")
+	default:
+		c.consumeFunc = f
+		close(c.consumeStart)
+	}
+	return nil
+}
+
 // Messages returns the read channel for the messages that are returned by
 // the broker.
-func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages }
+// This is a convenience function, DO NOT call both this and Consume().
+// This function always returns the same channel.
+func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage {
+
+	// Close c.messages only once.
+	// Chan close needs to synchronize with consumer.Close()
+	// and to let the currently running consumeFuncs finish
+	// We use consumer.Wait() to ensure everything is done before
+	// attempting to close c.messages.
+	var onceClose sync.Once
+
+	// Consume with a closure, aggregating all partitions to fan-in chan.
+	// Ignore error to remain idempotent: Messages() may be called any number
+	// of times with similar behavior.
+	// This masks a potential error where Consume() is called
+	// separately by the user.
+	c.Consume(func(inCh <-chan *sarama.ConsumerMessage) {
+		onceClose.Do(func() { go func() { c.Wait(); close(c.messages) }() })
+		for m := range inCh {
+			c.messages <- m
+		}
+	})
+
+	return c.messages
+}
+
+// Wait blocks until the consumer is closed.
+func (c *Consumer) Wait() {
+	<-c.dead
+	c.consumeWG.Wait()
+}
 
 // Errors returns a read channel of errors that occur during offset management, if
 // enabled. By default, errors are logged and not returned over this channel. If
@@ -205,7 +263,6 @@ func (c *Consumer) Close() (err error) {
 	if e := c.csmr.Close(); e != nil {
 		err = e
 	}
-	close(c.messages)
 	close(c.errors)
 
 	if e := c.leaveGroup(); e != nil {
@@ -729,8 +786,21 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	// Store in subscriptions
 	c.subs.Store(topic, partition, pc)
 
+	pCh := make(chan *sarama.ConsumerMessage)
+
 	// Start partition consumer goroutine
-	go pc.Loop(c.messages, c.errors)
+	go pc.Loop(pCh, c.errors)
+
+	c.consumeWG.Add(1)
+	go func() {
+		defer c.consumeWG.Done()
+		select {
+		case <-c.consumeStart:
+		case <-c.dying:
+			return
+		}
+		c.consumeFunc(pCh)
+	}()
 
 	return nil
 }
