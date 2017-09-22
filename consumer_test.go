@@ -4,21 +4,17 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Consumer", func() {
 
-	var newConsumer = func(group string) (*Consumer, error) {
-		config := NewConfig()
-		config.Consumer.Return.Errors = true
-		return NewConsumer(testKafkaAddrs, group, testTopics, config)
-	}
-
 	var newConsumerOf = func(group string, topics ...string) (*Consumer, error) {
 		config := NewConfig()
 		config.Consumer.Return.Errors = true
+		config.Consumer.Offsets.Initial = sarama.OffsetOldest
 		return NewConsumer(testKafkaAddrs, group, topics, config)
 	}
 
@@ -32,7 +28,7 @@ var _ = Describe("Consumer", func() {
 		go func() {
 			defer GinkgoRecover()
 
-			cs, err := newConsumer(group)
+			cs, err := NewConsumer(testKafkaAddrs, group, testTopics, nil)
 			Expect(err).NotTo(HaveOccurred())
 			defer cs.Close()
 			cs.consumerID = consumerID
@@ -50,7 +46,7 @@ var _ = Describe("Consumer", func() {
 
 	It("should init and share", func() {
 		// start CS1
-		cs1, err := newConsumer(testGroup)
+		cs1, err := newConsumerOf(testGroup, testTopics...)
 		Expect(err).NotTo(HaveOccurred())
 
 		// CS1 should consume all 8 partitions
@@ -60,7 +56,7 @@ var _ = Describe("Consumer", func() {
 		}))
 
 		// start CS2
-		cs2, err := newConsumer(testGroup)
+		cs2, err := newConsumerOf(testGroup, testTopics...)
 		Expect(err).NotTo(HaveOccurred())
 		defer cs2.Close()
 
@@ -192,6 +188,44 @@ var _ = Describe("Consumer", func() {
 		}))
 	})
 
+	It("should not commit unprocessed offsets", func() {
+		const groupID = "panicking"
+
+		cs, err := newConsumerOf(groupID, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+
+		subscriptionsOf(cs).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3},
+		}))
+
+		n := 0
+		Expect(func() {
+			for range cs.Messages() {
+				n++
+				panic("stop here!")
+			}
+		}).To(Panic())
+		Expect(cs.Close()).To(Succeed())
+		Expect(n).To(Equal(1))
+
+		bk, err := testClient.Coordinator(groupID)
+		Expect(err).NotTo(HaveOccurred())
+
+		req := &sarama.OffsetFetchRequest{
+			Version:       1,
+			ConsumerGroup: groupID,
+		}
+		req.AddPartition("topic-a", 0)
+		req.AddPartition("topic-a", 1)
+		req.AddPartition("topic-a", 2)
+		req.AddPartition("topic-a", 3)
+		Expect(bk.FetchOffset(req)).To(Equal(&sarama.OffsetFetchResponse{
+			Blocks: map[string]map[int32]*sarama.OffsetFetchResponseBlock{
+				"topic-a": {0: {Offset: -1}, 1: {Offset: -1}, 2: {Offset: -1}, 3: {Offset: -1}},
+			},
+		}))
+	})
+
 	It("should consume/commit/resume", func() {
 		acc := make(chan *testConsumerMessage, 150000)
 		consume("A", "fuzzing", 1500, acc)
@@ -234,7 +268,7 @@ var _ = Describe("Consumer", func() {
 	})
 
 	It("should allow close to be called multiple times", func() {
-		cs, err := newConsumer(testGroup)
+		cs, err := newConsumerOf(testGroup, testTopics...)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
