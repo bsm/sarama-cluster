@@ -236,79 +236,61 @@ func (c *Consumer) mainLoop() {
 		default:
 		}
 
-		// Remember previous subscriptions
-		var notification *Notification
-		if c.client.config.Group.Return.Notifications {
-			notification = newNotification(c.subs.Info())
-		}
+		// Start next consume cycle
+		c.nextTick()
+	}
+}
 
-		// Rebalance, fetch new subscriptions
-		subs, err := c.rebalance()
-		if err != nil {
-			c.rebalanceError(err, notification)
-			continue
-		}
+func (c *Consumer) nextTick() {
+	// Remember previous subscriptions
+	var notification *Notification
+	if c.client.config.Group.Return.Notifications {
+		notification = newNotification(c.subs.Info())
+	}
 
-		// Start the heartbeat
-		hbStop, hbDone := make(chan none), make(chan none)
-		go c.hbLoop(hbStop, hbDone)
+	// Rebalance, fetch new subscriptions
+	subs, err := c.rebalance()
+	if err != nil {
+		c.rebalanceError(err, notification)
+		return
+	}
 
-		// Subscribe to topic/partitions
-		if err := c.subscribe(subs); err != nil {
-			close(hbStop)
-			<-hbDone
-			c.rebalanceError(err, notification)
-			continue
-		}
+	// Coordinate loops, make sure everything is
+	// stopped on exit
+	tomb := newLoopTomb()
+	defer tomb.Close()
 
-		// Update/issue notification with new claims
-		if c.client.config.Group.Return.Notifications {
-			notification.claim(subs)
-			c.handleNotification(notification)
-		}
+	// Start the heartbeat
+	tomb.Go(c.hbLoop)
 
-		// Start topic watcher loop
-		twStop, twDone := make(chan none), make(chan none)
-		go c.twLoop(twStop, twDone)
+	// Subscribe to topic/partitions
+	if err := c.subscribe(tomb, subs); err != nil {
+		c.rebalanceError(err, notification)
+		return
+	}
 
-		// Start consuming and committing offsets
-		cmStop, cmDone := make(chan none), make(chan none)
-		go c.cmLoop(cmStop, cmDone)
-		atomic.StoreInt32(&c.consuming, 1)
+	// Update/issue notification with new claims
+	if c.client.config.Group.Return.Notifications {
+		notification.claim(subs)
+		c.handleNotification(notification)
+	}
 
-		// Wait for signals
-		select {
-		case <-hbDone:
-			close(cmStop)
-			close(twStop)
-			<-cmDone
-			<-twDone
-		case <-twDone:
-			close(cmStop)
-			close(hbStop)
-			<-cmDone
-			<-hbDone
-		case <-cmDone:
-			close(twStop)
-			close(hbStop)
-			<-twDone
-			<-hbDone
-		case <-c.dying:
-			close(cmStop)
-			close(twStop)
-			close(hbStop)
-			<-cmDone
-			<-twDone
-			<-hbDone
-			return
-		}
+	// Start topic watcher loop
+	tomb.Go(c.twLoop)
+
+	// Start consuming and committing offsets
+	tomb.Go(c.cmLoop)
+	atomic.StoreInt32(&c.consuming, 1)
+
+	// Wait for signals
+	select {
+	case <-tomb.Dying():
+	case <-c.dying:
 	}
 }
 
 // heartbeat loop, triggered by the mainLoop
-func (c *Consumer) hbLoop(stop <-chan none, done chan<- none) {
-	defer close(done)
-
+func (c *Consumer) hbLoop(stopped <-chan none) {
 	ticker := time.NewTicker(c.client.config.Group.Heartbeat.Interval)
 	defer ticker.Stop()
 
@@ -323,16 +305,16 @@ func (c *Consumer) hbLoop(stop <-chan none, done chan<- none) {
 				c.handleError(&Error{Ctx: "heartbeat", error: err})
 				return
 			}
-		case <-stop:
+		case <-stopped:
+			return
+		case <-c.dying:
 			return
 		}
 	}
 }
 
 // topic watcher loop, triggered by the mainLoop
-func (c *Consumer) twLoop(stop <-chan none, done chan<- none) {
-	defer close(done)
-
+func (c *Consumer) twLoop(stopped <-chan none) {
 	ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency / 2)
 	defer ticker.Stop()
 
@@ -352,16 +334,16 @@ func (c *Consumer) twLoop(stop <-chan none, done chan<- none) {
 					return
 				}
 			}
-		case <-stop:
+		case <-stopped:
+			return
+		case <-c.dying:
 			return
 		}
 	}
 }
 
 // commit loop, triggered by the mainLoop
-func (c *Consumer) cmLoop(stop <-chan none, done chan<- none) {
-	defer close(done)
-
+func (c *Consumer) cmLoop(stopped <-chan none) {
 	ticker := time.NewTicker(c.client.config.Consumer.Offsets.CommitInterval)
 	defer ticker.Stop()
 
@@ -372,7 +354,9 @@ func (c *Consumer) cmLoop(stop <-chan none, done chan<- none) {
 				c.handleError(&Error{Ctx: "commit", error: err})
 				return
 			}
-		case <-stop:
+		case <-stopped:
+			return
+		case <-c.dying:
 			return
 		}
 	}
@@ -507,7 +491,7 @@ func (c *Consumer) rebalance() (map[string][]int32, error) {
 }
 
 // Performs the subscription, part of the mainLoop()
-func (c *Consumer) subscribe(subs map[string][]int32) error {
+func (c *Consumer) subscribe(tomb *loopTomb, subs map[string][]int32) error {
 	// fetch offsets
 	offsets, err := c.fetchOffsets(subs)
 	if err != nil {
@@ -524,8 +508,8 @@ func (c *Consumer) subscribe(subs map[string][]int32) error {
 			wg.Add(1)
 
 			info := offsets[topic][partition]
-			go func(t string, p int32) {
-				if e := c.createConsumer(t, p, info); e != nil {
+			go func(topic string, partition int32) {
+				if e := c.createConsumer(tomb, topic, partition, info); e != nil {
 					mu.Lock()
 					err = e
 					mu.Unlock()
@@ -717,7 +701,7 @@ func (c *Consumer) leaveGroup() error {
 
 // --------------------------------------------------------------------
 
-func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo) error {
+func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32, info offsetInfo) error {
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
@@ -730,7 +714,9 @@ func (c *Consumer) createConsumer(topic string, partition int32, info offsetInfo
 	c.subs.Store(topic, partition, pc)
 
 	// Start partition consumer goroutine
-	go pc.Loop(c.messages, c.errors)
+	tomb.Go(func(stopper <-chan none) {
+		pc.Loop(stopper, c.messages, c.errors)
+	})
 
 	return nil
 }
