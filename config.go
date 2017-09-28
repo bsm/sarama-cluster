@@ -17,7 +17,12 @@ type Config struct {
 	Group struct {
 		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
 		PartitionStrategy Strategy
-		Offsets           struct {
+
+		// If true, merge all partitions into a single Messages channel.
+		// If false, user must consume each individual partition. (default true)
+		MergePartitions bool
+
+		Offsets struct {
 			Retry struct {
 				// The numer retries when committing offsets (defaults to 3).
 				Max int
@@ -73,6 +78,7 @@ func NewConfig() *Config {
 	c.Group.Offsets.Synchronization.DwellTime = c.Consumer.MaxProcessingTime
 	c.Group.Session.Timeout = 30 * time.Second
 	c.Group.Heartbeat.Interval = 3 * time.Second
+	c.Group.MergePartitions = true
 	c.Config.Version = minVersion
 	return c
 }
