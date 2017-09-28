@@ -13,8 +13,8 @@ import (
 type Consumer struct {
 	client *Client
 
-	csmr sarama.Consumer
-	subs *partitionMap
+	consumer sarama.Consumer
+	subs     *partitionMap
 
 	consumerID   string
 	generationID int32
@@ -34,19 +34,24 @@ type Consumer struct {
 	commitMu sync.Mutex
 }
 
-// NewConsumerFromClient initializes a new consumer from an existing client
-func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Consumer, error) {
-	csmr, err := sarama.NewConsumerFromClient(client.Client)
+// NewConsumer initializes a new consumer
+func NewConsumer(addrs []string, groupID string, topics []string, config *Config) (*Consumer, error) {
+	client, err := NewClient(addrs, config)
+	if err != nil {
+		return nil, err
+	}
+
+	consumer, err := sarama.NewConsumerFromClient(client.Client)
 	if err != nil {
 		return nil, err
 	}
 
 	sort.Strings(topics)
 	c := &Consumer{
-		client:  client,
-		csmr:    csmr,
-		subs:    newPartitionMap(),
-		groupID: groupID,
+		client:   client,
+		consumer: consumer,
+		subs:     newPartitionMap(),
+		groupID:  groupID,
 
 		coreTopics: topics,
 
@@ -63,22 +68,6 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 	go c.mainLoop()
 	return c, nil
-}
-
-// NewConsumer initializes a new consumer
-func NewConsumer(addrs []string, groupID string, topics []string, config *Config) (*Consumer, error) {
-	client, err := NewClient(addrs, config)
-	if err != nil {
-		return nil, err
-	}
-
-	consumer, err := NewConsumerFromClient(client, groupID, topics)
-	if err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	consumer.client.own = true
-	return consumer, nil
 }
 
 // Messages returns the read channel for the messages that are returned by
@@ -98,7 +87,7 @@ func (c *Consumer) Notifications() <-chan *Notification { return c.notifications
 
 // HighWaterMarks returns the current high water marks for each topic and partition
 // Consistency between partitions is not guaranteed since high water marks are updated separately.
-func (c *Consumer) HighWaterMarks() map[string]map[int32]int64 { return c.csmr.HighWaterMarks() }
+func (c *Consumer) HighWaterMarks() map[string]map[int32]int64 { return c.consumer.HighWaterMarks() }
 
 // MarkOffset marks the provided message as processed, alongside a metadata string
 // that represents the state of the partition consumer at that point in time. The
@@ -202,7 +191,7 @@ func (c *Consumer) Close() (err error) {
 	if e := c.release(); e != nil {
 		err = e
 	}
-	if e := c.csmr.Close(); e != nil {
+	if e := c.consumer.Close(); e != nil {
 		err = e
 	}
 	close(c.messages)
@@ -213,12 +202,9 @@ func (c *Consumer) Close() (err error) {
 	}
 	close(c.notifications)
 
-	if c.client.own {
-		if e := c.client.Close(); e != nil {
-			err = e
-		}
+	if e := c.client.Close(); e != nil {
+		err = e
 	}
-
 	return
 }
 
@@ -705,7 +691,7 @@ func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32,
 	sarama.Logger.Printf("cluster/consumer %s consume %s/%d from %d\n", c.memberID, topic, partition, info.NextOffset(c.client.config.Consumer.Offsets.Initial))
 
 	// Create partitionConsumer
-	pc, err := newPartitionConsumer(c.csmr, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
+	pc, err := newPartitionConsumer(c.consumer, topic, partition, info, c.client.config.Consumer.Offsets.Initial)
 	if err != nil {
 		return err
 	}

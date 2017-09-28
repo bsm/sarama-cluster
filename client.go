@@ -6,7 +6,6 @@ import "github.com/Shopify/sarama"
 type Client struct {
 	sarama.Client
 	config Config
-	own    bool
 }
 
 // NewClient creates a new client instance
