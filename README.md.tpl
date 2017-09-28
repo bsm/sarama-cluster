@@ -11,7 +11,10 @@ Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go clien
 
 Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
 
-## Example
+## Examples
+
+Consumers have two modes of operation. In the default multiplexed mode messages (and errors) of multiple
+topics and partitions are all passed to the single channel:
 
 ```go
 package main
@@ -26,6 +29,24 @@ import (
 )
 
 func main() {{ "ExampleConsumer" | code }}
+```
+
+Users who require access to individual partitions can use the partitioned mode which exposes access to partition-level
+consumers:
+
+```go
+package main
+
+import (
+  "fmt"
+  "log"
+  "os"
+  "os/signal"
+
+  cluster "github.com/bsm/sarama-cluster"
+)
+
+func main() {{ "ExampleConsumer_Partitions" | code }}
 ```
 
 ## Running tests

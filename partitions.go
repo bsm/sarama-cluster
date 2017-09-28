@@ -8,11 +8,45 @@ import (
 	"github.com/Shopify/sarama"
 )
 
+// PartitionConsumer allows code to consume individual partitions from the cluster.
+//
+// See docs for Consumer.Partitions() for more on how to implement this.
+type PartitionConsumer interface {
+
+	// Close stops the PartitionConsumer from fetching messages. It will initiate a shutdown, drain
+	// the Messages channel, harvest any errors & return them to the caller and trigger a rebalance.
+	Close() error
+
+	// Messages returns the read channel for the messages that are returned by
+	// the broker.
+	Messages() <-chan *sarama.ConsumerMessage
+
+	// Errors returns a read channel of errors that occurred during consuming, if
+	// enabled. By default, errors are logged and not returned over this channel.
+	// If you want to implement any custom error handling, set your config's
+	// Consumer.Return.Errors setting to true, and read from this channel.
+	Errors() <-chan *sarama.ConsumerError
+
+	// HighWaterMarkOffset returns the high water mark offset of the partition,
+	// i.e. the offset that will be used for the next message that will be produced.
+	// You can use this to determine how far behind the processing is.
+	HighWaterMarkOffset() int64
+
+	// Topic returns the consumed topic name
+	Topic() string
+
+	// Partition returns the consumed partition
+	Partition() int32
+}
+
 type partitionConsumer struct {
-	pcm sarama.PartitionConsumer
+	sarama.PartitionConsumer
 
 	state partitionState
 	mu    sync.Mutex
+
+	topic     string
+	partition int32
 
 	once        sync.Once
 	dying, dead chan none
@@ -31,20 +65,42 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 	}
 
 	return &partitionConsumer{
-		pcm:   pcm,
-		state: partitionState{Info: info},
+		PartitionConsumer: pcm,
+		state:             partitionState{Info: info},
+
+		topic:     topic,
+		partition: partition,
 
 		dying: make(chan none),
 		dead:  make(chan none),
 	}, nil
 }
 
-func (c *partitionConsumer) Loop(stopper <-chan none, messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+// Topic implements PartitionConsumer
+func (c *partitionConsumer) Topic() string { return c.topic }
+
+// Partition implements PartitionConsumer
+func (c *partitionConsumer) Partition() int32 { return c.partition }
+
+func (c *partitionConsumer) WaitFor(stopper <-chan none) {
 	defer close(c.dead)
 
 	for {
 		select {
-		case msg, ok := <-c.pcm.Messages():
+		case <-stopper:
+			return
+		case <-c.dying:
+			return
+		}
+	}
+}
+
+func (c *partitionConsumer) Multiplex(stopper <-chan none, messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
+	defer close(c.dead)
+
+	for {
+		select {
+		case msg, ok := <-c.Messages():
 			if !ok {
 				return
 			}
@@ -55,7 +111,7 @@ func (c *partitionConsumer) Loop(stopper <-chan none, messages chan<- *sarama.Co
 			case <-c.dying:
 				return
 			}
-		case err, ok := <-c.pcm.Errors():
+		case err, ok := <-c.Errors():
 			if !ok {
 				return
 			}
@@ -76,7 +132,7 @@ func (c *partitionConsumer) Loop(stopper <-chan none, messages chan<- *sarama.Co
 
 func (c *partitionConsumer) Close() (err error) {
 	c.once.Do(func() {
-		err = c.pcm.Close()
+		err = c.PartitionConsumer.Close()
 		close(c.dying)
 	})
 	<-c.dead
