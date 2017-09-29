@@ -26,7 +26,7 @@ type Config struct {
 		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
 		PartitionStrategy Strategy
 
-		// By default, messages and errors from the subsribed topics and partitions are all multiplexed and
+		// By default, messages and errors from the subscribed topics and partitions are all multiplexed and
 		// made available through the consumer's Messages() and Errors() channels.
 		//
 		// Users who require low-level access can enable ConsumerModePartitions where individual partitions

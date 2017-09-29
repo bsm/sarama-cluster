@@ -116,18 +116,20 @@ func main() {
 				return
 			}
 
-			// start a separate goroutine to consume the partition
+			// start a separate goroutine to consume the partition;
 			go func(pc cluster.PartitionConsumer) {
 				select {
 				case msg, more := <-pc.Messages():
-					if more {
-						fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-						consumer.MarkOffset(msg, "")	// mark message as processed
+					if !more {	// exit when the partition is closed
+						return
 					}
+					fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+					consumer.MarkOffset(msg, "")	// mark message as processed
 				case err, more := <-consumer.Errors():
-					if more {
-						log.Printf("Error: %s\n", err.Error())
+					if !more {	// exit when the partition is closed
+						return
 					}
+					log.Printf("Error: %s\n", err.Error())
 				}
 			}(part)
 		case ntf, more := <-consumer.Notifications():
