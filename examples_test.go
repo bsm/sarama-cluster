@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 
 	cluster "github.com/bsm/sarama-cluster"
 )
@@ -51,4 +52,24 @@ func ExampleConsumer() {
 			return
 		}
 	}
+}
+
+// This example shows how to use the consumer with
+// topic whitelists.
+func ExampleConfig_Whitelist() {
+
+	// init (custom) config, enable errors and notifications
+	config := cluster.NewConfig()
+	config.Group.Topics.Whitelist = regexp.MustCompile(`myservice.*`)
+
+	// init consumer
+	consumer, err := cluster.NewConsumer([]string{"127.0.0.1:9092"}, "my-consumer-group", nil, config)
+	if err != nil {
+		panic(err)
+	}
+	defer consumer.Close()
+
+	// consume messages
+	msg := <-consumer.Messages()
+	fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
 }
