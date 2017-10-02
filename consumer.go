@@ -40,7 +40,11 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 	if err != nil {
 		return nil, err
 	}
+	return NewConsumerFromClient(client, groupID, topics)
+}
 
+// NewConsumerFromClient initializes a new consumer
+func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Consumer, error) {
 	consumer, err := sarama.NewConsumerFromClient(client.Client)
 	if err != nil {
 		return nil, err

@@ -25,3 +25,8 @@ func NewClient(addrs []string, config *Config) (*Client, error) {
 
 	return &Client{Client: client, config: *config}, nil
 }
+
+// ClusterConfig returns the cluster client configuration.
+func (client *Client) ClusterConfig() *Config {
+	return &client.config
+}
