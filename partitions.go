@@ -21,12 +21,6 @@ type PartitionConsumer interface {
 	// the broker.
 	Messages() <-chan *sarama.ConsumerMessage
 
-	// Errors returns a read channel of errors that occurred during consuming, if
-	// enabled. By default, errors are logged and not returned over this channel.
-	// If you want to implement any custom error handling, set your config's
-	// Consumer.Return.Errors setting to true, and read from this channel.
-	Errors() <-chan *sarama.ConsumerError
-
 	// HighWaterMarkOffset returns the high water mark offset of the partition,
 	// i.e. the offset that will be used for the next message that will be produced.
 	// You can use this to determine how far behind the processing is.
@@ -82,11 +76,22 @@ func (c *partitionConsumer) Topic() string { return c.topic }
 // Partition implements PartitionConsumer
 func (c *partitionConsumer) Partition() int32 { return c.partition }
 
-func (c *partitionConsumer) WaitFor(stopper <-chan none) {
+func (c *partitionConsumer) WaitFor(stopper <-chan none, errors chan<- error) {
 	defer close(c.dead)
 
 	for {
 		select {
+		case err, ok := <-c.Errors():
+			if !ok {
+				return
+			}
+			select {
+			case errors <- err:
+			case <-stopper:
+				return
+			case <-c.dying:
+				return
+			}
 		case <-stopper:
 			return
 		case <-c.dying:

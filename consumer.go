@@ -79,15 +79,6 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 // ConsumerModeMultiplex (default).
 func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages }
 
-// Errors returns a read channel of errors that occur during offset management, if
-// enabled. By default, errors are logged and not returned over this channel. If
-// you want to implement any custom error handling, set your config's
-// Consumer.Return.Errors setting to true, and read from this channel.
-//
-// This channel will only return if Config.Group.Mode option is set to
-// ConsumerModeMultiplex (default).
-func (c *Consumer) Errors() <-chan error { return c.errors }
-
 // Partitions returns the read channels for individual partitions of this broker.
 //
 // This will channel will only return if Config.Group.Mode option is set to
@@ -98,6 +89,12 @@ func (c *Consumer) Errors() <-chan error { return c.errors }
 // completion) and new ones will be emitted. The returned channel will only close
 // when the consumer is completely shut down.
 func (c *Consumer) Partitions() <-chan PartitionConsumer { return c.partitions }
+
+// Errors returns a read channel of errors that occur during offset management, if
+// enabled. By default, errors are logged and not returned over this channel. If
+// you want to implement any custom error handling, set your config's
+// Consumer.Return.Errors setting to true, and read from this channel.
+func (c *Consumer) Errors() <-chan error { return c.errors }
 
 // Notifications returns a channel of Notifications that occur during consumer
 // rebalancing. Notifications will only be emitted over this channel, if your config's
@@ -722,7 +719,7 @@ func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32,
 	// Start partition consumer goroutine
 	tomb.Go(func(stopper <-chan none) {
 		if c.client.config.Group.Mode == ConsumerModePartitions {
-			pc.WaitFor(stopper)
+			pc.WaitFor(stopper, c.errors)
 		} else {
 			pc.Multiplex(stopper, c.messages, c.errors)
 		}
