@@ -27,8 +27,9 @@ type Consumer struct {
 	dying, dead chan none
 
 	consuming     int32
-	errors        chan error
 	messages      chan *sarama.ConsumerMessage
+	errors        chan error
+	partitions    chan PartitionConsumer
 	notifications chan *Notification
 
 	commitMu sync.Mutex
@@ -58,8 +59,9 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 		dying: make(chan none),
 		dead:  make(chan none),
 
-		errors:        make(chan error, client.config.ChannelBufferSize),
 		messages:      make(chan *sarama.ConsumerMessage),
+		errors:        make(chan error, client.config.ChannelBufferSize),
+		partitions:    make(chan PartitionConsumer, 1),
 		notifications: make(chan *Notification),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
@@ -72,7 +74,21 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 
 // Messages returns the read channel for the messages that are returned by
 // the broker.
+//
+// This channel will only return if Config.Group.Mode option is set to
+// ConsumerModeMultiplex (default).
 func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages }
+
+// Partitions returns the read channels for individual partitions of this broker.
+//
+// This will channel will only return if Config.Group.Mode option is set to
+// ConsumerModePartitions.
+//
+// The Partitions() channel must be listened to for the life of this consumer;
+// when a rebalance happens old partitions will be closed (naturally come to
+// completion) and new ones will be emitted. The returned channel will only close
+// when the consumer is completely shut down.
+func (c *Consumer) Partitions() <-chan PartitionConsumer { return c.partitions }
 
 // Errors returns a read channel of errors that occur during offset management, if
 // enabled. By default, errors are logged and not returned over this channel. If
@@ -200,6 +216,7 @@ func (c *Consumer) Close() (err error) {
 	if e := c.leaveGroup(); e != nil {
 		err = e
 	}
+	close(c.partitions)
 	close(c.notifications)
 
 	if e := c.client.Close(); e != nil {
@@ -701,9 +718,16 @@ func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32,
 
 	// Start partition consumer goroutine
 	tomb.Go(func(stopper <-chan none) {
-		pc.Loop(stopper, c.messages, c.errors)
+		if c.client.config.Group.Mode == ConsumerModePartitions {
+			pc.WaitFor(stopper, c.errors)
+		} else {
+			pc.Multiplex(stopper, c.messages, c.errors)
+		}
 	})
 
+	if c.client.config.Group.Mode == ConsumerModePartitions {
+		c.partitions <- pc
+	}
 	return nil
 }
 

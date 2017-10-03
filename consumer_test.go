@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"regexp"
+	"sync/atomic"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -22,26 +23,6 @@ var _ = Describe("Consumer", func() {
 		return Eventually(func() map[string][]int32 {
 			return c.Subscriptions()
 		}, "10s", "100ms")
-	}
-
-	var consume = func(consumerID, group string, max int, out chan *testConsumerMessage) {
-		go func() {
-			defer GinkgoRecover()
-
-			cs, err := NewConsumer(testKafkaAddrs, group, testTopics, nil)
-			Expect(err).NotTo(HaveOccurred())
-			defer cs.Close()
-			cs.consumerID = consumerID
-
-			for msg := range cs.Messages() {
-				out <- &testConsumerMessage{*msg, consumerID}
-				cs.MarkOffset(msg, "")
-
-				if max--; max == 0 {
-					return
-				}
-			}
-		}()
 	}
 
 	It("should init and share", func() {
@@ -226,34 +207,86 @@ var _ = Describe("Consumer", func() {
 		}))
 	})
 
+	It("should consume partitions", func() {
+		count := int32(0)
+		consume := func(consumerID string) {
+			defer GinkgoRecover()
+
+			config := NewConfig()
+			config.Group.Mode = ConsumerModePartitions
+			config.Consumer.Offsets.Initial = sarama.OffsetOldest
+
+			cs, err := NewConsumer(testKafkaAddrs, "partitions", testTopics, config)
+			Expect(err).NotTo(HaveOccurred())
+			defer cs.Close()
+
+			for pc := range cs.Partitions() {
+				go func(pc PartitionConsumer) {
+					defer pc.Close()
+
+					for msg := range pc.Messages() {
+						atomic.AddInt32(&count, 1)
+						cs.MarkOffset(msg, "")
+					}
+				}(pc)
+			}
+		}
+
+		go consume("A")
+		go consume("B")
+		go consume("C")
+
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&count)
+		}, "30s", "100ms").Should(BeNumerically(">=", 2000))
+	})
+
 	It("should consume/commit/resume", func() {
-		acc := make(chan *testConsumerMessage, 150000)
-		consume("A", "fuzzing", 1500, acc)
-		consume("B", "fuzzing", 2000, acc)
-		consume("C", "fuzzing", 1500, acc)
-		consume("D", "fuzzing", 200, acc)
-		consume("E", "fuzzing", 100, acc)
+		acc := make(chan *testConsumerMessage, 20000)
+		consume := func(consumerID string, max int32) {
+			defer GinkgoRecover()
+
+			cs, err := NewConsumer(testKafkaAddrs, "fuzzing", testTopics, nil)
+			Expect(err).NotTo(HaveOccurred())
+			defer cs.Close()
+			cs.consumerID = consumerID
+
+			for msg := range cs.Messages() {
+				acc <- &testConsumerMessage{*msg, consumerID}
+				cs.MarkOffset(msg, "")
+
+				if atomic.AddInt32(&max, -1) <= 0 {
+					return
+				}
+			}
+		}
+
+		go consume("A", 1500)
+		go consume("B", 2000)
+		go consume("C", 1500)
+		go consume("D", 200)
+		go consume("E", 100)
 
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
 
-		consume("F", "fuzzing", 300, acc)
-		consume("G", "fuzzing", 400, acc)
-		consume("H", "fuzzing", 1000, acc)
-		consume("I", "fuzzing", 2000, acc)
+		go consume("F", 300)
+		go consume("G", 400)
+		go consume("H", 1000)
+		go consume("I", 2000)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 8000))
 
-		consume("J", "fuzzing", 1000, acc)
+		go consume("J", 1000)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 9000))
 
-		consume("K", "fuzzing", 1000, acc)
-		consume("L", "fuzzing", 3000, acc)
+		go consume("K", 1000)
+		go consume("L", 3000)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 12000))
 
-		consume("M", "fuzzing", 1000, acc)
+		go consume("M", 1000)
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 15000))
 
