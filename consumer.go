@@ -251,6 +251,23 @@ func (c *Consumer) nextTick() {
 		notification = newNotification(c.subs.Info())
 	}
 
+	// Refresh coordinator
+	if err := c.refreshCoordinator(); err != nil {
+		c.rebalanceError(err, nil)
+		return
+	}
+
+	// Release subscriptions
+	if err := c.release(); err != nil {
+		c.rebalanceError(err, nil)
+		return
+	}
+
+	// Issue rebalance start notification
+	if c.client.config.Group.Return.Notifications {
+		c.handleNotification(notification)
+	}
+
 	// Rebalance, fetch new subscriptions
 	subs, err := c.rebalance()
 	if err != nil {
@@ -274,7 +291,7 @@ func (c *Consumer) nextTick() {
 
 	// Update/issue notification with new claims
 	if c.client.config.Group.Return.Notifications {
-		notification.claim(subs)
+		notification = notification.success(subs)
 		c.handleNotification(notification)
 	}
 
@@ -366,7 +383,10 @@ func (c *Consumer) cmLoop(stopped <-chan none) {
 }
 
 func (c *Consumer) rebalanceError(err error, n *Notification) {
-	c.handleNotification(n)
+	if n != nil {
+		n.Type = RebalanceError
+		c.handleNotification(n)
+	}
 
 	switch err {
 	case sarama.ErrRebalanceInProgress:
@@ -381,7 +401,7 @@ func (c *Consumer) rebalanceError(err error, n *Notification) {
 }
 
 func (c *Consumer) handleNotification(n *Notification) {
-	if n != nil && c.client.config.Group.Return.Notifications {
+	if c.client.config.Group.Return.Notifications {
 		select {
 		case c.notifications <- n:
 		case <-c.dying:
@@ -411,9 +431,12 @@ func (c *Consumer) release() (err error) {
 	defer c.subs.Clear()
 
 	// Wait for messages to be processed
+	timeout := time.NewTimer(c.client.config.Group.Offsets.Synchronization.DwellTime)
+	defer timeout.Stop()
+
 	select {
 	case <-c.dying:
-	case <-time.After(c.client.config.Group.Offsets.Synchronization.DwellTime):
+	case <-timeout.C:
 	}
 
 	// Commit offsets, continue on errors
@@ -450,25 +473,12 @@ func (c *Consumer) heartbeat() error {
 func (c *Consumer) rebalance() (map[string][]int32, error) {
 	sarama.Logger.Printf("cluster/consumer %s rebalance\n", c.memberID)
 
-	if err := c.refreshMetadata(); err != nil {
-		return nil, err
-	}
-
-	if err := c.client.RefreshCoordinator(c.groupID); err != nil {
-		return nil, err
-	}
-
 	allTopics, err := c.client.Topics()
 	if err != nil {
 		return nil, err
 	}
 	c.extraTopics = c.selectExtraTopics(allTopics)
 	sort.Strings(c.extraTopics)
-
-	// Release subscriptions
-	if err := c.release(); err != nil {
-		return nil, err
-	}
 
 	// Re-join consumer group
 	strategy, err := c.joinGroup()
@@ -779,6 +789,13 @@ func (c *Consumer) isPotentialExtraTopic(topic string) bool {
 		return true
 	}
 	return false
+}
+
+func (c *Consumer) refreshCoordinator() error {
+	if err := c.refreshMetadata(); err != nil {
+		return err
+	}
+	return c.client.RefreshCoordinator(c.groupID)
 }
 
 func (c *Consumer) refreshMetadata() (err error) {
