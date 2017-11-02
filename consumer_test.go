@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sync/atomic"
+	"time"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -179,6 +180,43 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(offsets).To(Equal(map[string]map[int32]offsetInfo{
 			"topic-a": {0: {Offset: -1}, 1: {Offset: 4}, 2: {Offset: 5}, 3: {Offset: -1}},
+		}))
+	})
+
+	It("should support rewind of offsets", func() {
+		rewindTime := time.Now().UnixNano() / int64(time.Millisecond)
+		cs, err := newConsumerOf(testGroup, "topic-a")
+		Expect(err).NotTo(HaveOccurred())
+		defer cs.Close()
+
+		subscriptionsOf(cs).Should(Equal(map[string][]int32{
+			"topic-a": {0, 1, 2, 3}},
+		))
+
+		cs.MarkPartitionOffset("topic-a", 1, 3, "")
+		cs.MarkPartitionOffset("topic-a", 2, 4, "")
+		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
+
+		offsets, err := cs.fetchOffsets(cs.Subscriptions())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offsets).To(Equal(map[string]map[int32]offsetInfo{
+			"topic-a": {0: {Offset: -1}, 1: {Offset: 4}, 2: {Offset: 5}, 3: {Offset: -1}},
+		}))
+
+		// get the offset to rewind
+		offset, err := testClient.GetOffset("topic-a", 1, rewindTime)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Now use that offset to rewind
+		cs.subs.Fetch("topic-a", 1).RewindOffset(offset, "")
+
+		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
+
+		// verify if the offset rewind happened as expected
+		offsetsRewind, err := cs.fetchOffsets(cs.Subscriptions())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(offsetsRewind).To(Equal(map[string]map[int32]offsetInfo{
+			"topic-a": {0: {Offset: -1}, 1: {Offset: offset}, 2: {Offset: 5}, 3: {Offset: -1}},
 		}))
 	})
 

@@ -136,6 +136,45 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 	}
 }
 
+// RewindOffsets rewinds the offsets for this CG to the specified timestamp
+// for all the partitions on this topic for which this consumer is subscribed
+func (c *Consumer) RewindOffsets(topic string, resetTime int64) error {
+	// first pause the subscriptions; but don't clear anything yet.
+	// this will close all the existing subscriptions and we won't
+	// receive any new messages
+	c.subs.Stop()
+	// we need to rebalance before we go out so that we can resume the consumption
+	// irrespective of errors
+	defer c.rebalance()
+
+	// get all the partitions
+	snap := c.subs.Snapshot()
+	for tp, _ := range snap {
+		if tp.Topic != topic {
+			// not the topic to rewind; keep moving
+			continue
+		}
+		// get the offset corresponding to the time
+		offset, err := c.client.GetOffset(topic, tp.Partition, resetTime)
+		if err != nil {
+			sarama.Logger.Printf("cluster/consumer %s get offsets error %v\n", c.memberID, err)
+			return err
+		}
+		sarama.Logger.Printf("cluster/consumer %s rewinding offset for topic: %s, partition: %d to %d\n", c.memberID, topic, tp.Partition, offset)
+		// mark the local state as well
+		c.subs.Fetch(topic, tp.Partition).RewindOffset(offset, "rewind")
+	}
+
+	// Now commit all the saved offsets
+	err := c.CommitOffsets()
+	if err != nil {
+		sarama.Logger.Printf("cluster/consumer %s commit offsets error %v\n", c.memberID, err)
+		return err
+	}
+
+	return err
+}
+
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()

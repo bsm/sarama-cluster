@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"time"
 
 	cluster "github.com/bsm/sarama-cluster"
 )
@@ -96,6 +97,65 @@ func ExampleConsumer_Partitions() {
 					consumer.MarkOffset(msg, "") // mark message as processed
 				}
 			}(part)
+		case <-signals:
+			return
+		}
+	}
+}
+
+// This example shows how to use the consumer to read messages
+// from a multiple topics through a multiplexed channel and
+// then to rewind the offsets to consume from the start again
+func ExampleConsumerWithRewind() {
+	rewindTime := time.Now().Unix()
+	// init (custom) config, enable errors and notifications
+	config := cluster.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Group.Return.Notifications = true
+
+	// init consumer
+	brokers := []string{"127.0.0.1:9092"}
+	topics := []string{"my_topic", "other_topic"}
+	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+	if err != nil {
+		panic(err)
+	}
+	defer consumer.Close()
+
+	// trap SIGINT to trigger a shutdown.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+
+	// consume errors
+	go func() {
+		for err := range consumer.Errors() {
+			log.Printf("Error: %s\n", err.Error())
+		}
+	}()
+
+	// consume notifications
+	go func() {
+		for ntf := range consumer.Notifications() {
+			log.Printf("Rebalanced: %+v\n", ntf)
+		}
+	}()
+
+	rewind := 0
+	// consume messages, watch signals
+	for {
+		select {
+		case msg, ok := <-consumer.Messages():
+			if ok {
+				fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+				rewind++
+				// rewind to the same time once every 10 messages
+				if rewind%10 == 0 {
+					// lets rewind
+					consumer.RewindOffsets(msg.Topic, rewindTime)
+				} else {
+					consumer.MarkOffset(msg, "") // mark message as processed
+				}
+			}
 		case <-signals:
 			return
 		}
