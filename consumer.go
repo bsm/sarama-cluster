@@ -11,7 +11,8 @@ import (
 
 // Consumer is a cluster group consumer
 type Consumer struct {
-	client *Client
+	client    *Client
+	ownClient bool
 
 	consumer sarama.Consumer
 	subs     *partitionMap
@@ -42,8 +43,23 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 		return nil, err
 	}
 
+	consumer, err := NewConsumerFromClient(client, groupID, topics)
+	if err != nil {
+		return nil, err
+	}
+	consumer.ownClient = true
+	return consumer, nil
+}
+
+// NewConsumerFromClient initializes a new consumer from an existing client
+func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Consumer, error) {
+	if !client.claim() {
+		return nil, errClientInUse
+	}
+
 	consumer, err := sarama.NewConsumerFromClient(client.Client)
 	if err != nil {
+		client.release()
 		return nil, err
 	}
 
@@ -65,6 +81,7 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 		notifications: make(chan *Notification),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
+		client.release()
 		return nil, err
 	}
 
@@ -219,8 +236,11 @@ func (c *Consumer) Close() (err error) {
 	close(c.partitions)
 	close(c.notifications)
 
-	if e := c.client.Close(); e != nil {
-		err = e
+	c.client.release()
+	if c.ownClient {
+		if e := c.client.Close(); e != nil {
+			err = e
+		}
 	}
 	return
 }
