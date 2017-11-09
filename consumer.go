@@ -26,6 +26,7 @@ type Consumer struct {
 	extraTopics []string
 
 	dying, dead chan none
+	closeOnce   sync.Once
 
 	consuming     int32
 	messages      chan *sarama.ConsumerMessage
@@ -218,35 +219,32 @@ func (c *Consumer) CommitOffsets() error {
 
 // Close safely closes the consumer and releases all resources
 func (c *Consumer) Close() (err error) {
-	select {
-	case <-c.dying:
-		return
-	default:
+	c.closeOnce.Do(func() {
 		close(c.dying)
-	}
-	<-c.dead
+		<-c.dead
 
-	if e := c.release(); e != nil {
-		err = e
-	}
-	if e := c.consumer.Close(); e != nil {
-		err = e
-	}
-	close(c.messages)
-	close(c.errors)
-
-	if e := c.leaveGroup(); e != nil {
-		err = e
-	}
-	close(c.partitions)
-	close(c.notifications)
-
-	c.client.release()
-	if c.ownClient {
-		if e := c.client.Close(); e != nil {
+		if e := c.release(); e != nil {
 			err = e
 		}
-	}
+		if e := c.consumer.Close(); e != nil {
+			err = e
+		}
+		close(c.messages)
+		close(c.errors)
+
+		if e := c.leaveGroup(); e != nil {
+			err = e
+		}
+		close(c.partitions)
+		close(c.notifications)
+
+		c.client.release()
+		if c.ownClient {
+			if e := c.client.Close(); e != nil {
+				err = e
+			}
+		}
+	})
 	return
 }
 
