@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"regexp"
+	"sync"
 	"sync/atomic"
 
 	"github.com/Shopify/sarama"
@@ -318,6 +319,22 @@ var _ = Describe("Consumer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
 		Expect(cs.Close()).NotTo(HaveOccurred())
+	})
+
+	It("should allow close to be called in parallel", func() {
+		cs, err := newConsumerOf(testGroup, testTopics...)
+		Expect(err).NotTo(HaveOccurred())
+
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer GinkgoRecover()
+				Expect(cs.Close()).NotTo(HaveOccurred())
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	})
 
 })
