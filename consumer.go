@@ -26,6 +26,7 @@ type Consumer struct {
 	extraTopics []string
 
 	dying, dead chan none
+	closed      uint32
 
 	consuming     int32
 	messages      chan *sarama.ConsumerMessage
@@ -218,12 +219,11 @@ func (c *Consumer) CommitOffsets() error {
 
 // Close safely closes the consumer and releases all resources
 func (c *Consumer) Close() (err error) {
-	select {
-	case <-c.dying:
+	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
 		return
-	default:
-		close(c.dying)
 	}
+
+	close(c.dying)
 	<-c.dead
 
 	if e := c.release(); e != nil {
