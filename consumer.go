@@ -51,7 +51,12 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *Config
 	return consumer, nil
 }
 
-// NewConsumerFromClient initializes a new consumer from an existing client
+// NewConsumerFromClient initializes a new consumer from an existing client.
+//
+// Please note that clients cannot be shared between consumers (due to Kafka internals),
+// they can only be re-used which requires the user to call Close() on the first consumer
+// before using this method again to initialize another one. Attempts to use a client with
+// more than one consumer at a time will return errors.
 func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Consumer, error) {
 	if !client.claim() {
 		return nil, errClientInUse
