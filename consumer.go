@@ -161,6 +161,34 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 	}
 }
 
+// ResetOffsets marks the provided message as processed, alongside a metadata string
+// that represents the state of the partition consumer at that point in time. The
+// metadata string can be used by another consumer to restore that state, so it
+// can resume consumption.
+//
+// Difference between ResetOffset and MarkOffset is that it allows to rewind to an earlier offset
+func (c *Consumer) ResetOffset(msg *sarama.ConsumerMessage, metadata string) {
+	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset+1, metadata)
+}
+
+// ResetPartitionOffset marks an offset of the provided topic/partition as processed.
+// See ResetOffset for additional explanation.
+func (c *Consumer) ResetPartitionOffset(topic string, partition int32, offset int64, metadata string) {
+	c.subs.Fetch(topic, partition).ResetOffset(offset+1, metadata)
+}
+
+// ResetOffsets marks stashed offsets as processed.
+// See ResetOffset for additional explanation.
+func (c *Consumer) ResetOffsets(s *OffsetStash) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for tp, info := range s.offsets {
+		c.subs.Fetch(tp.Topic, tp.Partition).ResetOffset(info.Offset+1, info.Metadata)
+		delete(s.offsets, tp)
+	}
+}
+
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
