@@ -246,6 +246,17 @@ func (c *Consumer) Close() (err error) {
 		close(c.partitions)
 		close(c.notifications)
 
+		// drain
+		for range c.messages {
+		}
+		for range c.errors {
+		}
+		for p := range c.partitions {
+			_ = p.Close()
+		}
+		for range c.notifications {
+		}
+
 		c.client.release()
 		if c.ownClient {
 			if e := c.client.Close(); e != nil {
