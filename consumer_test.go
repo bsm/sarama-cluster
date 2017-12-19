@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sync/atomic"
+	"time"
 
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
@@ -279,6 +280,7 @@ var _ = Describe("Consumer", func() {
 		go consume("C", 1500)
 		go consume("D", 200)
 		go consume("E", 100)
+		time.Sleep(10 * time.Second) // wait for consumers to subscribe to topics
 
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
