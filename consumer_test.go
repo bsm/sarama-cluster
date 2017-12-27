@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"sync"
+	"math/rand"
 )
 
 var _ = Describe("Consumer", func() {
@@ -305,7 +306,6 @@ var _ = Describe("Consumer", func() {
 		go consume("C", 1500)
 		go consume("D", 200)
 		go consume("E", 100)
-		time.Sleep(10 * time.Second) // wait for consumers to subscribe to topics
 
 		Expect(testSeed(5000)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
@@ -348,11 +348,12 @@ var _ = Describe("Consumer", func() {
 
 		var sg sync.WaitGroup
 		var ml sync.Mutex
-
+		rand.Seed(time.Now().Unix())
+		currentTopic := fmt.Sprintf("%s-%d", testTopicsReset, rand.Intn(1000))
 		consume := func(consumerID string, initialOffset int64, resetOffset int64, max int64) {
 			defer GinkgoRecover()
 			partitionOffset := make(map[int32]int64)
-			cs, err := NewConsumer(testKafkaAddrs, consumerID, []string {testTopicsReset}, nil)
+			cs, err := NewConsumer(testKafkaAddrs, consumerID, []string {currentTopic}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			cs.consumerID = consumerID
 			defer cs.Close()
@@ -378,7 +379,7 @@ var _ = Describe("Consumer", func() {
 
 		resetOffset := func(msg *testConsumerMessage) {
 			defer GinkgoRecover()
-			cs, err := NewConsumer(testKafkaAddrs, msg.ConsumerID, []string {testTopicsReset}, nil)
+			cs, err := NewConsumer(testKafkaAddrs, msg.ConsumerID, []string {currentTopic}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			defer cs.Close()
 			cs.consumerID = msg.ConsumerID
@@ -396,14 +397,12 @@ var _ = Describe("Consumer", func() {
 		sg.Add(1)
 		go consume("B", 0, 999, 1500)
 		sg.Add(1)
-		go consume("C", 0, 999, 1500)
-		sg.Add(1)
 
-		Expect(testSeedTopic(12000, testTopicsReset)).NotTo(HaveOccurred())
+		Expect(testSeedTopic(12000, currentTopic)).NotTo(HaveOccurred())
 
 		// Receive the message at offset 1500 and reset to that specific offset
 		// Each topic has 4 default partitions 3consumers*4partitions
-		Eventually(func() int { return len(rol) }, "30s", "100ms").Should(BeNumerically(">=", 12))
+		Eventually(func() int { return len(rol) }, "30s", "100ms").Should(BeNumerically(">=", 8))
 
 		// Wait till the required maximum offset is reached
 		sg.Wait()
@@ -416,8 +415,6 @@ var _ = Describe("Consumer", func() {
 		go consume("A", 1000, -1, 2000)
 		sg.Add(1)
 		go consume("B", 1000, -1, 2000)
-		sg.Add(1)
-		go consume("C", 1000, -1, 2000)
 		sg.Add(1)
 
 		sg.Wait()
@@ -432,7 +429,7 @@ var _ = Describe("Consumer", func() {
 			key := fmt.Sprintf("%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
 			uniques[key] = append(uniques[key], msg.ConsumerID)
 		}
-		Expect(len(uniques)).To(BeNumerically(">=", 6000))
+		Expect(len(uniques)).To(BeNumerically(">=", 4000))
 	})
 
 	It("should allow close to be called multiple times", func() {
