@@ -168,7 +168,7 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 //
 // Difference between ResetOffset and MarkOffset is that it allows to rewind to an earlier offset
 func (c *Consumer) ResetOffset(msg *sarama.ConsumerMessage, metadata string) {
-	c.subs.Fetch(msg.Topic, msg.Partition).MarkOffset(msg.Offset+1, metadata)
+	c.subs.Fetch(msg.Topic, msg.Partition).ResetOffset(msg.Offset+1, metadata)
 }
 
 // ResetPartitionOffset marks an offset of the provided topic/partition as processed.

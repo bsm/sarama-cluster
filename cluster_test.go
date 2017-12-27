@@ -21,6 +21,7 @@ var (
 	testKafkaRoot  = "kafka_2.12-1.0.0"
 	testKafkaAddrs = []string{"127.0.0.1:29092"}
 	testTopics     = []string{"topic-a", "topic-b"}
+	testTopicsReset     = "topic-c"
 
 	testClient              sarama.Client
 	testKafkaCmd, testZkCmd *exec.Cmd
@@ -73,6 +74,10 @@ var _ = BeforeSuite(func() {
 		"-name", "kafkaServer", "kafka.Kafka",
 		testDataDir("server.properties"),
 	)
+	if _, err := os.Stat(testKafkaData); err == nil  {
+		// Remove old test data before starting
+		Expect(os.RemoveAll(testKafkaData)).NotTo(HaveOccurred())
+	}
 
 	Expect(os.MkdirAll(testKafkaData, 0777)).To(Succeed())
 	Expect(testZkCmd.Start()).To(Succeed())
@@ -137,6 +142,22 @@ func testSeed(n int) error {
 			if _, _, err := producer.SendMessage(msg); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+func testSeedTopic(n int, topic string) error {
+	producer, err := sarama.NewSyncProducerFromClient(testClient)
+	if err != nil {
+		return err
+	}
+	defer producer.Close()
+
+	for i := 0; i < n; i++ {
+		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
+		msg := &sarama.ProducerMessage{Topic: topic, Key: kv, Value: kv}
+		if _, _, err := producer.SendMessage(msg); err != nil {
+			return err
 		}
 	}
 	return nil
