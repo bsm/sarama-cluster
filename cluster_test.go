@@ -101,7 +101,7 @@ var _ = BeforeSuite(func() {
 	}, "30s", "1s").Should(Succeed())
 
 	// Seed a few messages
-	Expect(testSeed(1000)).To(Succeed())
+	Expect(testSeed(1000, testTopics)).To(Succeed())
 })
 
 var _ = AfterSuite(func() {
@@ -128,7 +128,7 @@ func testDataDir(tokens ...string) string {
 	return filepath.Join(tokens...)
 }
 
-func testSeed(n int) error {
+func testSeed(n int, testTopics []string) error {
 	producer, err := sarama.NewSyncProducerFromClient(testClient)
 	if err != nil {
 		return err
@@ -142,22 +142,6 @@ func testSeed(n int) error {
 			if _, _, err := producer.SendMessage(msg); err != nil {
 				return err
 			}
-		}
-	}
-	return nil
-}
-func testSeedTopic(n int, topic string) error {
-	producer, err := sarama.NewSyncProducerFromClient(testClient)
-	if err != nil {
-		return err
-	}
-	defer producer.Close()
-
-	for i := 0; i < n; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		msg := &sarama.ProducerMessage{Topic: topic, Key: kv, Value: kv}
-		if _, _, err := producer.SendMessage(msg); err != nil {
-			return err
 		}
 	}
 	return nil

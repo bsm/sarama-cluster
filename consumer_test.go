@@ -306,28 +306,28 @@ var _ = Describe("Consumer", func() {
 		go consume("C", 1500)
 		go consume("D", 200)
 		go consume("E", 100)
-
-		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		time.Sleep(10 * time.Second) // wait for consumers to subscribe to topics
+		Expect(testSeed(5000, testTopics)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 5000))
 
 		go consume("F", 300)
 		go consume("G", 400)
 		go consume("H", 1000)
 		go consume("I", 2000)
-		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Expect(testSeed(5000, testTopics)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 8000))
 
 		go consume("J", 1000)
-		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Expect(testSeed(5000, testTopics)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 9000))
 
 		go consume("K", 1000)
 		go consume("L", 3000)
-		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Expect(testSeed(5000, testTopics)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 12000))
 
 		go consume("M", 1000)
-		Expect(testSeed(5000)).NotTo(HaveOccurred())
+		Expect(testSeed(5000, testTopics)).NotTo(HaveOccurred())
 		Eventually(func() int { return len(acc) }, "30s", "100ms").Should(BeNumerically(">=", 15000))
 
 		close(acc)
@@ -397,8 +397,8 @@ var _ = Describe("Consumer", func() {
 		sg.Add(1)
 		go consume("B", 0, 999, 1500)
 		sg.Add(1)
-
-		Expect(testSeedTopic(12000, currentTopic)).NotTo(HaveOccurred())
+		time.Sleep(10 * time.Second) // wait for consumers to subscribe to topics
+		Expect(testSeed(12000, []string {currentTopic})).NotTo(HaveOccurred())
 
 		// Receive the message at offset 1500 and reset to that specific offset
 		// Each topic has 4 default partitions 3consumers*4partitions
