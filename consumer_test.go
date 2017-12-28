@@ -420,10 +420,6 @@ var _ = Describe("Consumer", func() {
 		sg.Wait()
 		close(acc)
 
-		for _, rmsg := range rol {
-			Expect(rmsg.ConsumerID).ShouldNot(Equal(""))
-		}
-
 		uniques := make(map[string][]string)
 		for msg := range acc {
 			key := fmt.Sprintf("%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
