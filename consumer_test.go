@@ -9,8 +9,8 @@ import (
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"sync"
 	"math/rand"
+	"sync"
 )
 
 var _ = Describe("Consumer", func() {
@@ -338,94 +338,6 @@ var _ = Describe("Consumer", func() {
 			uniques[key] = append(uniques[key], msg.ConsumerID)
 		}
 		Expect(uniques).To(HaveLen(15000))
-	})
-
-	It("should consume/commit/reset/resume", func() {
-		acc := make(chan *testConsumerMessage, 30000)
-
-		// reset offset list
-		rol := make([]*testConsumerMessage, 0)
-
-		var sg sync.WaitGroup
-		var ml sync.Mutex
-		rand.Seed(time.Now().Unix())
-		currentTopic := fmt.Sprintf("%s-%d", testTopicsReset, rand.Intn(1000))
-		consume := func(consumerID string, initialOffset int64, resetOffset int64, max int64) {
-			defer GinkgoRecover()
-			partitionOffset := make(map[int32]int64)
-			cs, err := NewConsumer(testKafkaAddrs, consumerID, []string {currentTopic}, nil)
-			Expect(err).NotTo(HaveOccurred())
-			cs.consumerID = consumerID
-			defer cs.Close()
-			for msg := range cs.Messages() {
-				// Make sure that the initial offset for all partitions are as given.
-				if _, ok := partitionOffset[msg.Partition]; !ok {
-					partitionOffset[msg.Partition] = msg.Offset
-					Expect(msg.Offset).To(Equal(initialOffset))
-				}
-				acc <- &testConsumerMessage{*msg, consumerID}
-				cs.MarkOffset(msg, "")
-				if resetOffset == msg.Offset {
-					ml.Lock()
-					rol = append(rol, &testConsumerMessage{*msg, consumerID})
-					ml.Unlock()
-				}
-				if msg.Offset > int64(max) {
-					sg.Done()
-					return
-				}
-			}
-		}
-
-		resetOffset := func(msg *testConsumerMessage) {
-			defer GinkgoRecover()
-			cs, err := NewConsumer(testKafkaAddrs, msg.ConsumerID, []string {currentTopic}, nil)
-			Expect(err).NotTo(HaveOccurred())
-			defer cs.Close()
-			cs.consumerID = msg.ConsumerID
-
-			// Wait for a message to ensure that partitions have balanced to this consumer
-			<- cs.Messages()
-
-			// Reset Partition Offset
-			cs.ResetOffset(&msg.ConsumerMessage, "")
-			err = cs.CommitOffsets()
-			Expect(err).NotTo(HaveOccurred())
-		}
-
-		go consume("A", 0, 999, 1500)
-		sg.Add(1)
-		go consume("B", 0, 999, 1500)
-		sg.Add(1)
-		time.Sleep(10 * time.Second) // wait for consumers to subscribe to topics
-		Expect(testSeed(12000, []string {currentTopic})).NotTo(HaveOccurred())
-
-		// Receive the message at offset 1500 and reset to that specific offset
-		// Each topic has 4 default partitions 3consumers*4partitions
-		Eventually(func() int { return len(rol) }, "30s", "100ms").Should(BeNumerically(">=", 8))
-
-		// Wait till the required maximum offset is reached
-		sg.Wait()
-
-		// Reset Offsets for each consumer group
-		for _, rmsg := range rol {
-			resetOffset(rmsg)
-		}
-
-		go consume("A", 1000, -1, 2000)
-		sg.Add(1)
-		go consume("B", 1000, -1, 2000)
-		sg.Add(1)
-
-		sg.Wait()
-		close(acc)
-
-		uniques := make(map[string][]string)
-		for msg := range acc {
-			key := fmt.Sprintf("%s/%d/%d", msg.Topic, msg.Partition, msg.Offset)
-			uniques[key] = append(uniques[key], msg.ConsumerID)
-		}
-		Expect(len(uniques)).To(BeNumerically(">=", 4000))
 	})
 
 	It("should allow close to be called multiple times", func() {

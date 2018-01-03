@@ -56,8 +56,6 @@ func (s *OffsetStash) ResetOffset(msg *sarama.ConsumerMessage, metadata string) 
 	s.ResetPartitionOffset(msg.Topic, msg.Partition, msg.Offset, metadata)
 }
 
-
-
 // Offsets returns the latest stashed offsets by topic-partition
 func (s *OffsetStash) Offsets() map[string]int64 {
 	s.mu.Lock()

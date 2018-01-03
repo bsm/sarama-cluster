@@ -60,17 +60,16 @@ var _ = Describe("partitionConsumer", func() {
 			Dirty: true,
 		}))
 
-
 		// After committing a later offset, try rewinding back to earlier offset with new metadata.
 		subject.ResetOffset(2001, "met@")
 		Expect(subject.State()).To(Equal(partitionState{
-			Info: offsetInfo{2001, "met@"},
+			Info:  offsetInfo{2001, "met@"},
 			Dirty: true,
 		}))
 
 		subject.MarkCommitted(2001) // should not unset state
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2001, "met@"},
+			Info: offsetInfo{2001, "met@"},
 		}))
 
 		subject.MarkOffset(2002, "me7a") // should bump state
@@ -81,10 +80,9 @@ var _ = Describe("partitionConsumer", func() {
 
 		subject.MarkCommitted(2002)
 		Expect(subject.State()).To(Equal(partitionState{
-			Info:  offsetInfo{2002, "me7a"},
+			Info: offsetInfo{2002, "me7a"},
 		}))
 	})
-
 
 	It("should not fail when nil", func() {
 		blank := (*partitionConsumer)(nil)
