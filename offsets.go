@@ -36,6 +36,26 @@ func (s *OffsetStash) MarkPartitionOffset(topic string, partition int32, offset 
 	}
 }
 
+// ResetPartitionOffset stashes the offset for the provided topic/partition combination.
+// Difference between ResetPartitionOffset and MarkPartitionOffset is that, ResetPartitionOffset supports earlier offsets
+func (s *OffsetStash) ResetPartitionOffset(topic string, partition int32, offset int64, metadata string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := topicPartition{Topic: topic, Partition: partition}
+	if info := s.offsets[key]; offset <= info.Offset {
+		info.Offset = offset
+		info.Metadata = metadata
+		s.offsets[key] = info
+	}
+}
+
+// ResetOffset stashes the provided message offset
+// See ResetPartitionOffset for explanation
+func (s *OffsetStash) ResetOffset(msg *sarama.ConsumerMessage, metadata string) {
+	s.ResetPartitionOffset(msg.Topic, msg.Partition, msg.Offset, metadata)
+}
+
 // Offsets returns the latest stashed offsets by topic-partition
 func (s *OffsetStash) Offsets() map[string]int64 {
 	s.mu.Lock()

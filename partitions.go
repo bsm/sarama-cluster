@@ -182,6 +182,20 @@ func (c *partitionConsumer) MarkOffset(offset int64, metadata string) {
 	c.mu.Unlock()
 }
 
+func (c *partitionConsumer) ResetOffset(offset int64, metadata string) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	if offset <= c.state.Info.Offset {
+		c.state.Info.Offset = offset
+		c.state.Info.Metadata = metadata
+		c.state.Dirty = true
+	}
+	c.mu.Unlock()
+}
+
 // --------------------------------------------------------------------
 
 type partitionState struct {
