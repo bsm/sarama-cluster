@@ -9,8 +9,6 @@ import (
 	"github.com/Shopify/sarama"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"math/rand"
-	"sync"
 )
 
 var _ = Describe("Consumer", func() {
