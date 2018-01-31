@@ -12,19 +12,7 @@ import (
 //
 // See docs for Consumer.Partitions() for more on how to implement this.
 type PartitionConsumer interface {
-
-	// Close stops the PartitionConsumer from fetching messages. It will initiate a shutdown, drain
-	// the Messages channel, harvest any errors & return them to the caller and trigger a rebalance.
-	Close() error
-
-	// Messages returns the read channel for the messages that are returned by
-	// the broker.
-	Messages() <-chan *sarama.ConsumerMessage
-
-	// HighWaterMarkOffset returns the high water mark offset of the partition,
-	// i.e. the offset that will be used for the next message that will be produced.
-	// You can use this to determine how far behind the processing is.
-	HighWaterMarkOffset() int64
+	sarama.PartitionConsumer
 
 	// Topic returns the consumed topic name
 	Topic() string
@@ -42,7 +30,9 @@ type partitionConsumer struct {
 	topic     string
 	partition int32
 
-	once        sync.Once
+	closeOnce sync.Once
+	closeErr  error
+
 	dying, dead chan none
 }
 
@@ -75,6 +65,21 @@ func (c *partitionConsumer) Topic() string { return c.topic }
 
 // Partition implements PartitionConsumer
 func (c *partitionConsumer) Partition() int32 { return c.partition }
+
+// AsyncClose implements PartitionConsumer
+func (c *partitionConsumer) AsyncClose() {
+	c.closeOnce.Do(func() {
+		c.closeErr = c.PartitionConsumer.Close()
+		close(c.dying)
+	})
+}
+
+// Close implements PartitionConsumer
+func (c *partitionConsumer) Close() error {
+	c.AsyncClose()
+	<-c.dead
+	return c.closeErr
+}
 
 func (c *partitionConsumer) WaitFor(stopper <-chan none, errors chan<- error) {
 	defer close(c.dead)
@@ -133,15 +138,6 @@ func (c *partitionConsumer) Multiplex(stopper <-chan none, messages chan<- *sara
 			return
 		}
 	}
-}
-
-func (c *partitionConsumer) Close() (err error) {
-	c.once.Do(func() {
-		err = c.PartitionConsumer.Close()
-		close(c.dying)
-	})
-	<-c.dead
-	return err
 }
 
 func (c *partitionConsumer) State() partitionState {
