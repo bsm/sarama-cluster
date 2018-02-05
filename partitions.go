@@ -19,6 +19,10 @@ type PartitionConsumer interface {
 
 	// Partition returns the consumed partition
 	Partition() int32
+
+	// Offset returns the offset used for creating the PartitionConsumer instance.
+	// Offset can be a literal offset, or OffsetNewest, or OffsetOldest
+	Offset() int64
 }
 
 type partitionConsumer struct {
@@ -29,6 +33,7 @@ type partitionConsumer struct {
 
 	topic     string
 	partition int32
+	offset    int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -37,12 +42,14 @@ type partitionConsumer struct {
 }
 
 func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32, info offsetInfo, defaultOffset int64) (*partitionConsumer, error) {
-	pcm, err := manager.ConsumePartition(topic, partition, info.NextOffset(defaultOffset))
+	offset := info.NextOffset(defaultOffset)
+	pcm, err := manager.ConsumePartition(topic, partition, offset)
 
 	// Resume from default offset, if requested offset is out-of-range
 	if err == sarama.ErrOffsetOutOfRange {
 		info.Offset = -1
-		pcm, err = manager.ConsumePartition(topic, partition, defaultOffset)
+		offset = defaultOffset
+		pcm, err = manager.ConsumePartition(topic, partition, offset)
 	}
 	if err != nil {
 		return nil, err
@@ -54,6 +61,7 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 
 		topic:     topic,
 		partition: partition,
+		offset:    offset,
 
 		dying: make(chan none),
 		dead:  make(chan none),
@@ -65,6 +73,9 @@ func (c *partitionConsumer) Topic() string { return c.topic }
 
 // Partition implements PartitionConsumer
 func (c *partitionConsumer) Partition() int32 { return c.partition }
+
+// Offset implements PartitionConsumer
+func (c *partitionConsumer) Offset() int64 { return c.offset }
 
 // AsyncClose implements PartitionConsumer
 func (c *partitionConsumer) AsyncClose() {
