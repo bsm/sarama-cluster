@@ -194,10 +194,12 @@ var _ = Describe("Consumer", func() {
 
 		cs.MarkPartitionOffset("topic-a", 1, 3, "")
 		cs.MarkPartitionOffset("topic-a", 2, 4, "")
+		cs.MarkPartitionOffset("topic-b", 1, 2, "") // should not throw NPE
 		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
 
 		cs.ResetPartitionOffset("topic-a", 1, 2, "")
 		cs.ResetPartitionOffset("topic-a", 2, 3, "")
+		cs.ResetPartitionOffset("topic-b", 1, 2, "") // should not throw NPE
 		Expect(cs.CommitOffsets()).NotTo(HaveOccurred())
 
 		offsets, err := cs.fetchOffsets(cs.Subscriptions())
