@@ -708,8 +708,7 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 
 	for memberID, topics := range strategy.Perform(c.client.config.Group.PartitionStrategy) {
 		if err := req.AddGroupAssignmentMember(memberID, &sarama.ConsumerGroupMemberAssignment{
-			Version: 1,
-			Topics:  topics,
+			Topics: topics,
 		}); err != nil {
 			return nil, err
 		}
