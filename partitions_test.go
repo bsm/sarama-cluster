@@ -84,15 +84,6 @@ var _ = Describe("partitionConsumer", func() {
 		}))
 	})
 
-	It("should not fail when nil", func() {
-		blank := (*partitionConsumer)(nil)
-		Expect(func() {
-			_ = blank.getState()
-			blank.MarkOffset(2001, "met@")
-			blank.markCommitted(2001)
-		}).NotTo(Panic())
-	})
-
 })
 
 var _ = Describe("partitionMap", func() {
