@@ -104,7 +104,7 @@ func ExampleConsumer_Partitions() {
 
 // This example shows how to use the consumer with
 // topic whitelists.
-func ExampleConfig_Whitelist() {
+func ExampleConfig_whitelist() {
 
 	// init (custom) config, enable errors and notifications
 	config := cluster.NewConfig()
