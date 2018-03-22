@@ -700,8 +700,18 @@ func (c *Consumer) syncGroup(strategy *balancer) (map[string][]int32, error) {
 		GenerationId: generationID,
 	}
 
+	assignor := c.client.config.Group.PartitionAssignor
+	if assignor == nil {
+		switch c.client.config.Group.PartitionStrategy {
+		case StrategyRoundRobin:
+			assignor = RoundRobinAssignor
+		default:
+			assignor = RangeAssignor
+		}
+	}
+
 	if strategy != nil {
-		for memberID, topics := range strategy.Perform(c.client.config.Group.PartitionStrategy) {
+		for memberID, topics := range strategy.Perform(assignor) {
 			if err := req.AddGroupAssignmentMember(memberID, &sarama.ConsumerGroupMemberAssignment{
 				Topics: topics,
 			}); err != nil {

@@ -23,7 +23,12 @@ type Config struct {
 	// Group is the namespace for group management properties
 	Group struct {
 
-		// The strategy to use for the allocation of partitions to consumers (defaults to StrategyRange)
+		// The assignor implementation to use for the allocation of partitions to consumers.
+		// Defaults to RangeAssignor.
+		PartitionAssignor Assignor
+
+		// The strategy to use for the allocation of partitions to consumers. Defaults to
+		// StrategyRange. If PartitionAssignor is set, it takes precedence over this option.
 		PartitionStrategy Strategy
 
 		// By default, messages and errors from the subscribed topics and partitions are all multiplexed and

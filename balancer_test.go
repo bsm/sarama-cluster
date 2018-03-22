@@ -55,76 +55,205 @@ var _ = Describe("balancer", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("should parse from meta data", func() {
+	It("should track topic partitions", func() {
 		Expect(subject.topics).To(HaveLen(3))
 	})
 
-	It("should perform", func() {
-		Expect(subject.Perform(StrategyRange)).To(Equal(map[string]map[string][]int32{
-			"a": {"one": {0, 1}, "two": {0, 1, 2}},
-			"b": {"one": {2, 3}, "three": {0, 1}},
-		}))
-
-		Expect(subject.Perform(StrategyRoundRobin)).To(Equal(map[string]map[string][]int32{
-			"a": {"one": {0, 2}, "two": {0, 1, 2}},
-			"b": {"one": {1, 3}, "three": {0, 1}},
-		}))
+	It("should track group member subscriptions", func() {
+		subs := subject.subs
+		Expect(subs.Members()).To(ConsistOf([]string{"a", "b"}))
+		Expect(subs.SubscribedMembers("one")).To(ConsistOf([]string{"a", "b"}))
+		Expect(subs.SubscribedMembers("two")).To(Equal([]string{"a"}))
+		Expect(subs.SubscribedMembers("three")).To(Equal([]string{"b"}))
 	})
 
 })
 
-var _ = Describe("topicInfo", func() {
-
-	DescribeTable("Ranges",
-		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			info := topicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			Expect(info.Ranges()).To(Equal(expected))
+var _ = Describe("Assignors", func() {
+	DescribeTable("Range",
+		func(subs submap, topics topicparts, expected Assignments) {
+			result := RangeAssignor(subs.Subscriptions(), topics.TopicPartitions())
+			Expect(result).To(Equal(expected))
 		},
 
-		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{
-			"M1": {0}, "M2": {1}, "M3": {2},
+		Entry("one consumer, no topics", submap{"m0": {"t0"}}, topicparts{}, Assignments{}),
+		Entry("one consumer, no such topic", submap{"m0": {"t1"}}, topicparts{"t0": {0}}, Assignments{}),
+
+		Entry("one consumer, one topic", submap{"m0": {"t0"}}, topicparts{"t0": {0, 1, 2}}, Assignments{
+			"m0": {"t0": {0, 1, 2}},
 		}),
-		Entry("member ID order", []string{"M3", "M1", "M2"}, []int32{0, 1, 2}, map[string][]int32{
-			"M1": {0}, "M2": {1}, "M3": {2},
+
+		Entry("one consumer, two topics, one subscribed", submap{"m0": {"t0"}}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 1, 2}},
 		}),
-		Entry("more members than partitions", []string{"M1", "M2", "M3"}, []int32{0, 1}, map[string][]int32{
-			"M1": {0}, "M3": {1},
+
+		Entry("one consumer, multiple topics", submap{"m0": {"t0", "t1"}}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 1, 2}, "t1": {0, 1, 2}},
 		}),
-		Entry("far more members than partitions", []string{"M1", "M2", "M3"}, []int32{0}, map[string][]int32{
-			"M2": {0},
+
+		Entry("two consumers, one topic, one partition", submap{
+			"m0": {"t0"},
+			"m1": {"t0"},
+		}, topicparts{
+			"t0": {0},
+		}, Assignments{
+			"m0": {"t0": {0}},
 		}),
-		Entry("fewer members than partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2, 3}, map[string][]int32{
-			"M1": {0}, "M2": {1, 2}, "M3": {3},
+
+		Entry("two consumers, one topic, two partitions", submap{
+			"m0": {"t0"},
+			"m1": {"t0"},
+		}, topicparts{
+			"t0": {0, 1},
+		}, Assignments{
+			"m0": {"t0": {0}},
+			"m1": {"t0": {1}},
 		}),
-		Entry("uneven members/partitions ratio", []string{"M1", "M2", "M3"}, []int32{0, 2, 4, 6, 8}, map[string][]int32{
-			"M1": {0, 2}, "M2": {4}, "M3": {6, 8},
+
+		Entry("multiple consumers, mixed topics", submap{
+			"m0": {"t0"},
+			"m1": {"t0", "t1"},
+			"m2": {"t0"},
+		}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1},
+		}, Assignments{
+			"m0": {"t0": {0}},
+			"m1": {"t0": {1}, "t1": {0, 1}},
+			"m2": {"t0": {2}},
+		}),
+
+		Entry("two consumers, two topics, six partitions", submap{
+			"m0": {"t0", "t1"},
+			"m1": {"t0", "t1"},
+		}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 1}, "t1": {0, 1}},
+			"m1": {"t0": {2}, "t1": {2}},
+		}),
+
+		Entry("heavily uneven partition counts", submap{
+			"m0": {"t0", "t1", "t2"},
+			"m1": {"t0", "t1", "t2"},
+		}, topicparts{
+			"t0": {0, 1, 2, 3, 4},
+			"t1": {0, 1},
+			"t2": {0},
+		}, Assignments{
+			"m0": {"t0": {0, 1, 2}, "t1": {0}, "t2": {0}},
+			"m1": {"t0": {3, 4}, "t1": {1}},
 		}),
 	)
 
 	DescribeTable("RoundRobin",
-		func(memberIDs []string, partitions []int32, expected map[string][]int32) {
-			info := topicInfo{MemberIDs: memberIDs, Partitions: partitions}
-			Expect(info.RoundRobin()).To(Equal(expected))
+		func(subs submap, topics topicparts, expected Assignments) {
+			result := RoundRobinAssignor(subs.Subscriptions(), topics.TopicPartitions())
+			Expect(result).To(Equal(expected))
 		},
 
-		Entry("three members, three partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2}, map[string][]int32{
-			"M1": {0}, "M2": {1}, "M3": {2},
+		Entry("one consumer, no topics", submap{"m0": {"t0"}}, topicparts{}, Assignments{}),
+		Entry("one consumer, no such topic", submap{"m0": {"t1"}}, topicparts{"t0": {0}}, Assignments{}),
+
+		Entry("one consumer, one topic", submap{"m0": {"t0"}}, topicparts{"t0": {0, 1, 2}}, Assignments{
+			"m0": {"t0": {0, 1, 2}},
 		}),
-		Entry("member ID order", []string{"M3", "M1", "M2"}, []int32{0, 1, 2}, map[string][]int32{
-			"M1": {0}, "M2": {1}, "M3": {2},
+
+		Entry("one consumer, two topics, one subscribed", submap{"m0": {"t0"}}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 1, 2}},
 		}),
-		Entry("more members than partitions", []string{"M1", "M2", "M3"}, []int32{0, 1}, map[string][]int32{
-			"M1": {0}, "M2": {1},
+
+		Entry("one consumer, multiple topics", submap{"m0": {"t0", "t1"}}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 1, 2}, "t1": {0, 1, 2}},
 		}),
-		Entry("far more members than partitions", []string{"M1", "M2", "M3"}, []int32{0}, map[string][]int32{
-			"M1": {0},
+
+		Entry("two consumers, one topic, two partitions", submap{
+			"m0": {"t0"},
+			"m1": {"t0"},
+		}, topicparts{
+			"t0": {0, 1},
+		}, Assignments{
+			"m0": {"t0": {0}},
+			"m1": {"t0": {1}},
 		}),
-		Entry("fewer members than partitions", []string{"M1", "M2", "M3"}, []int32{0, 1, 2, 3}, map[string][]int32{
-			"M1": {0, 3}, "M2": {1}, "M3": {2},
+
+		Entry("two consumers, one topic, one partition", submap{
+			"m0": {"t0"},
+			"m1": {"t0"},
+		}, topicparts{
+			"t0": {0},
+		}, Assignments{
+			"m0": {"t0": {0}},
 		}),
-		Entry("uneven members/partitions ratio", []string{"M1", "M2", "M3"}, []int32{0, 2, 4, 6, 8}, map[string][]int32{
-			"M1": {0, 6}, "M2": {2, 8}, "M3": {4},
+
+		Entry("multiple consumers, mixed topics", submap{
+			"m0": {"t0"},
+			"m1": {"t0", "t1"},
+			"m2": {"t0"},
+		}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1},
+		}, Assignments{
+			"m0": {"t0": {0}},
+			"m1": {"t0": {1}, "t1": {0, 1}},
+			"m2": {"t0": {2}},
+		}),
+
+		Entry("two consumers, two topics, six partitions", submap{
+			"m0": {"t0", "t1"},
+			"m1": {"t0", "t1"},
+		}, topicparts{
+			"t0": {0, 1, 2},
+			"t1": {0, 1, 2},
+		}, Assignments{
+			"m0": {"t0": {0, 2}, "t1": {1}},
+			"m1": {"t0": {1}, "t1": {0, 2}},
+		}),
+
+		Entry("heavily uneven partition counts", submap{
+			"m0": {"t0", "t1", "t2"},
+			"m1": {"t0", "t1", "t2"},
+		}, topicparts{
+			"t0": {0, 1, 2, 3, 4},
+			"t1": {0, 1},
+			"t2": {0},
+		}, Assignments{
+			"m0": {"t0": {0, 2, 4}, "t1": {1}},
+			"m1": {"t0": {1, 3}, "t1": {0}, "t2": {0}},
 		}),
 	)
-
 })
+
+type submap map[string][]string
+type topicparts map[string][]int32
+
+func (s submap) Subscriptions() *Subscriptions {
+	subs := NewSubscriptions()
+	for memberID, topics := range s {
+		for _, topic := range topics {
+			subs.AddSubscriber(memberID, topic)
+		}
+	}
+	return subs
+}
+
+func (t topicparts) TopicPartitions() []*TopicPartitions {
+	tps := []*TopicPartitions{}
+	for topic, partitions := range t {
+		tps = append(tps, &TopicPartitions{Name: topic, Partitions: partitions})
+	}
+	return tps
+}
