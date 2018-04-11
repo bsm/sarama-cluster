@@ -27,7 +27,7 @@ type Consumer struct {
 	coreTopics  []string
 	extraTopics []string
 
-	dying, dead chan none
+	dying, dead, done chan none
 	closeOnce   sync.Once
 
 	consuming     int32
@@ -82,6 +82,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 
 		dying: make(chan none),
 		dead:  make(chan none),
+		done:  make(chan none),
 
 		messages:      make(chan *sarama.ConsumerMessage),
 		errors:        make(chan error, client.config.ChannelBufferSize),
@@ -288,6 +289,7 @@ func (c *Consumer) Close() (err error) {
 		}
 		close(c.partitions)
 		close(c.notifications)
+		close(c.done)
 
 		// drain
 		for range c.messages {
@@ -308,6 +310,14 @@ func (c *Consumer) Close() (err error) {
 		}
 	})
 	return
+}
+
+// Mark consumers as done, this allows blocked rebalance to proceed earlier than DwellTime
+func (c *Consumer) MarkConsumersDone() {
+	select {
+	case c.done <- none{}:
+	default:
+	}
 }
 
 func (c *Consumer) mainLoop() {
@@ -520,6 +530,7 @@ func (c *Consumer) release() (err error) {
 	defer timeout.Stop()
 
 	select {
+	case <-c.done:
 	case <-c.dying:
 	case <-timeout.C:
 	}
