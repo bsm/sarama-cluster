@@ -2,10 +2,11 @@
 
 
 [[projects]]
+  branch = "feature/consumer-groups"
   name = "github.com/Shopify/sarama"
   packages = ["."]
-  revision = "35324cf48e33d8260e1c7c18854465a904ade249"
-  version = "v1.17.0"
+  revision = "e3e6f6791f233561d21982982f032726ec227668"
+  source = "github.com/bsm/sarama-1"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -42,7 +43,6 @@
   packages = [
     ".",
     "config",
-    "extensions/table",
     "internal/codelocation",
     "internal/containernode",
     "internal/failer",
@@ -95,7 +95,7 @@
   branch = "master"
   name = "github.com/rcrowley/go-metrics"
   packages = ["."]
-  revision = "e2704e165165ec55d062f5919b4b29494e9fa790"
+  revision = "d932a24a8ccb8fcadc993e5c6c58f93dac168294"
 
 [[projects]]
   branch = "master"
@@ -105,13 +105,13 @@
     "html/atom",
     "html/charset"
   ]
-  revision = "afe8f62b1d6bbd81f31868121a50b06d8188e1f9"
+  revision = "5f9ae10d9af5b1c89ae6904293b14b064d4ada23"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "63fc586f45fe72d95d5240a5d5eb95e6503907d3"
+  revision = "cbbc999da32df943dac6cd71eb3ee39e1d7838b9"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -146,6 +146,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2fa33a2d1ae87e0905ef09332bb4b3fda29179f6bcd48fd3b94070774b9e458b"
+  inputs-digest = "4202c1d38815e216c78b2091e313b110f12fb966590a13f1fc2577c9d828ad31"
   solver-name = "gps-cdcl"
   solver-version = 1
