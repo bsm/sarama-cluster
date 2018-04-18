@@ -9,7 +9,7 @@ Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go clien
 
 ## Documentation
 
-Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
+Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster.
 
 ## Examples
 
@@ -20,116 +20,64 @@ topics and partitions are all passed to the single channel:
 package main
 
 import (
-	"fmt"
-	"log"
-	"os"
-	"os/signal"
-
-	cluster "github.com/bsm/sarama-cluster"
-)
-
-func main() {
-
-	// init (custom) config, enable errors and notifications
-	config := cluster.NewConfig()
-	config.Consumer.Return.Errors = true
-	config.Group.Return.Notifications = true
-
-	// init consumer
-	brokers := []string{"127.0.0.1:9092"}
-	topics := []string{"my_topic", "other_topic"}
-	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
-	if err != nil {
-		panic(err)
-	}
-	defer consumer.Close()
-
-	// trap SIGINT to trigger a shutdown.
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
-	// consume errors
-	go func() {
-		for err := range consumer.Errors() {
-			log.Printf("Error: %s\n", err.Error())
-		}
-	}()
-
-	// consume notifications
-	go func() {
-		for ntf := range consumer.Notifications() {
-			log.Printf("Rebalanced: %+v\n", ntf)
-		}
-	}()
-
-	// consume messages, watch signals
-	for {
-		select {
-		case msg, ok := <-consumer.Messages():
-			if ok {
-				fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-				consumer.MarkOffset(msg, "")	// mark message as processed
-			}
-		case <-signals:
-			return
-		}
-	}
-}
-```
-
-Users who require access to individual partitions can use the partitioned mode which exposes access to partition-level
-consumers:
-
-```go
-package main
-
-import (
   "fmt"
   "log"
   "os"
   "os/signal"
 
+  "github.com/Shopify/sarama"
   cluster "github.com/bsm/sarama-cluster"
 )
 
 func main() {
+	config := sarama.NewConfig()
+	config.ClientID = "my-client"
+	config.Version = sarama.V0_10_2_0
+	config.Consumer.Return.Errors = true
 
-	// init (custom) config, set mode to ConsumerModePartitions
-	config := cluster.NewConfig()
-	config.Group.Mode = cluster.ConsumerModePartitions
+	// define a (thread-safe) handler
+	handler := cluster.HandlerFunc(func(pc cluster.PartitionConsumer) error {
+		for {
+			select {
+			case msg, more := <-pc.Messages():
+				if !more {
+					return nil
+				}
+				fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+				pc.MarkMessage(msg, "")	// mark message as processed
+			case <-pc.Done():
+				return nil
+			}
+		}
+	})
 
 	// init consumer
 	brokers := []string{"127.0.0.1:9092"}
 	topics := []string{"my_topic", "other_topic"}
-	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config, handler)
 	if err != nil {
 		panic(err)
 	}
 	defer consumer.Close()
 
+	// consume errors
+	go func() {
+		for err := range consumer.Errors() {
+			log.Printf("Error: %v\n", err)
+		}
+	}()
+
+	// consume claims
+	go func() {
+		for claim := range consumer.Claims() {
+			log.Printf("Claimed: %+v\n", claim.Topics)
+		}
+	}()
+
 	// trap SIGINT to trigger a shutdown.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
-
-	// consume partitions
-	for {
-		select {
-		case part, ok := <-consumer.Partitions():
-			if !ok {
-				return
-			}
-
-			// start a separate goroutine to consume messages
-			go func(pc cluster.PartitionConsumer) {
-				for msg := range pc.Messages() {
-					fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-					consumer.MarkOffset(msg, "")	// mark message as processed
-				}
-			}(part)
-		case <-signals:
-			return
-		}
-	}
+	<-signals
 }
 ```
 
@@ -140,7 +88,9 @@ http://onsi.github.io/ginkgo for more details.
 
 To run tests, call:
 
-	$ make test
+```shell
+$ make test
+```
 
 ## Troubleshooting
 

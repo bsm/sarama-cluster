@@ -20,7 +20,7 @@
 #  name = "github.com/x/y"
 #  version = "2.4.0"
 
-
 [[constraint]]
   name = "github.com/Shopify/sarama"
-  version = "^1.14.0"
+  source = "github.com/bsm/sarama-1"
+  branch = "feature/consumer-groups"
