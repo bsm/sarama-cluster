@@ -142,6 +142,46 @@ var _ = Describe("Consumer", func() {
 		Expect(m5.Close()).To(Succeed())
 	})
 
+	It("should allow change topics", func() {
+		groupID := newTestConsumerGroupID()
+
+		m1, err := newConsumer("M1", groupID, testTopics...)
+		Expect(err).NotTo(HaveOccurred())
+		defer m1.Close()
+
+		m2, err := newConsumer("M2", groupID, testTopics...)
+		Expect(err).NotTo(HaveOccurred())
+		defer m2.Close()
+
+		// M1 and M2 should consume 4 partitions each
+		claimsOf(m1).Should(SatisfyAll(
+			HaveLen(2),
+			HaveKeyWithValue("topic-a", HaveLen(2)),
+			HaveKeyWithValue("topic-b", HaveLen(2)),
+		))
+		claimsOf(m2).Should(SatisfyAll(
+			HaveLen(2),
+			HaveKeyWithValue("topic-a", HaveLen(2)),
+			HaveKeyWithValue("topic-b", HaveLen(2)),
+		))
+
+		// Claims should be redistributed after topic change
+		m1.SetTopics("topic-a")
+		claimsOf(m1).Should(SatisfyAll(
+			HaveLen(1),
+			HaveKeyWithValue("topic-a", HaveLen(2)),
+		))
+		claimsOf(m2).Should(SatisfyAll(
+			HaveLen(2),
+			HaveKeyWithValue("topic-a", HaveLen(2)),
+			HaveKeyWithValue("topic-b", HaveLen(4)),
+		))
+
+		// should not error
+		Expect(m1.Close()).To(Succeed())
+		Expect(m2.Close()).To(Succeed())
+	})
+
 	It("should allow close to be called multiple times", func() {
 		groupID := newTestConsumerGroupID()
 
