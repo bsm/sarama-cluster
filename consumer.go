@@ -248,27 +248,24 @@ func (c *consumer) nextSession(topics []string) (bool, error) {
 	defer som.Stop()
 
 	var wg sync.WaitGroup
-	var errOnce sync.Once
-
 	for topic, partitions := range claims {
 		for _, partition := range partitions {
 			wg.Add(1)
+
 			go func(topic string, partition int32) {
 				defer wg.Done()
 				defer sess.Stop()
 
 				pom := som.Get(topic, partition)
-				if ce := c.consume(sess, pom, topic, partition); ce != nil {
-					errOnce.Do(func() {
-						err = ce
-					})
+				if err := c.consume(sess, pom, topic, partition); err != nil {
+					c.handleError(err)
 				}
 			}(topic, partition)
 		}
 	}
-
 	wg.Wait()
-	return false, err
+
+	return false, nil
 }
 
 func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffsetManager, topic string, partition int32) *sarama.ConsumerError {

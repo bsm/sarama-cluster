@@ -1,4 +1,5 @@
 PKG=$(shell go list ./... | grep -v vendor)
+KAFKA_VERSION=1.0.1
 
 default: vet test
 
@@ -17,10 +18,10 @@ test-race:
 .PHONY: vet test test-race test-verbose
 
 scenario.up:
-	docker-compose -f testdata/docker-compose.yml up
+	docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml up
 
 scenario.rm:
-	docker-compose -f testdata/docker-compose.yml rm -f
+	docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml rm -f
 
 .PHONY: scenario.up scenario.rm
 

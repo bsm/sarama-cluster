@@ -18,18 +18,11 @@ func Example() {
 
 	// define a (thread-safe) handler
 	handler := cluster.HandlerFunc(func(pc cluster.PartitionConsumer) error {
-		for {
-			select {
-			case msg, more := <-pc.Messages():
-				if !more {
-					return nil
-				}
-				fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-				pc.MarkMessage(msg, "") // mark message as processed
-			case <-pc.Done():
-				return nil
-			}
+		for msg := range pc.Messages() {
+			fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+			pc.MarkMessage(msg, "custom metadata") // mark message as processed
 		}
+		return nil
 	})
 
 	// init consumer
