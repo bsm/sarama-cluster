@@ -25,3 +25,8 @@ type Claim struct {
 	// Topics of claimed topics and partitions
 	Topics map[string][]int32
 }
+
+var noopHandler = HandlerFunc(func(pc PartitionConsumer) error {
+	<-pc.Done()
+	return nil
+})

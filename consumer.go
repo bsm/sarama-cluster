@@ -84,6 +84,10 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 		return nil, err
 	}
 
+	if handler == nil {
+		handler = noopHandler
+	}
+
 	c := &consumer{
 		groupID:   groupID,
 		topics:    topics,
@@ -122,15 +126,21 @@ func (c *consumer) Close() (err error) {
 	c.closeOnce.Do(func() {
 		// init shutdown, wait for sessions to exit
 		close(c.shutdown)
-		<-c.stopped
 
-		// close consumers and group
+		// close consumers first to stop process loops
 		if e := c.consumers.Close(); e != nil {
 			err = e
 		}
+
+		// wait until all loops have exited
+		<-c.stopped
+
+		// close the group, perform a final commit
 		if e := c.group.Close(); e != nil {
 			err = e
 		}
+
+		// close client if one was created by us
 		if c.ownClient {
 			if e := c.client.Close(); e != nil {
 				err = e
@@ -273,6 +283,7 @@ func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffse
 	offset := pom.nextOffset(c.config.Consumer.Offsets.Initial)
 
 	// init partition consumer, resume from default offset, if requested offset is out-of-range
+	// don't defer pmc.Close(), pcm will be be closed by wrap below
 	pcm, err := c.consumers.ConsumePartition(topic, partition, offset)
 	if err == sarama.ErrOffsetOutOfRange {
 		pom.reset()
@@ -282,26 +293,35 @@ func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffse
 	if err != nil {
 		return consumerError(err, topic, partition)
 	}
-	defer pcm.Close()
-
+	// handle consumer errors
 	go func() {
 		for err := range pcm.Errors() {
 			c.handleError(err)
 		}
 	}()
 
-	// start processing
-	if err := c.handler.ProcessLoop(&partitionConsumer{
+	// init partition consumer wrapper
+	wrap := &partitionConsumer{
 		topic:     topic,
 		partition: partition,
 
 		partitionOffsetManager: pom,
 		PartitionConsumer:      pcm,
 		ConsumerGroupSession:   sess,
-	}); err != nil {
+	}
+	defer wrap.Close()
+
+	// close when session is done
+	go func() {
+		<-sess.Done()
+		wrap.Close()
+	}()
+
+	// start processing
+	if err := c.handler.ProcessLoop(wrap); err != nil {
 		return consumerError(err, topic, partition)
 	}
-	return nil
+	return consumerError(wrap.Close(), topic, partition)
 }
 
 func (c *consumer) handleError(err error) {

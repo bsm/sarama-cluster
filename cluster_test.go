@@ -2,10 +2,12 @@ package cluster_test
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
+	cluster "github.com/bsm/sarama-cluster"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -17,6 +19,36 @@ var (
 
 func newTestConsumerGroupID() string {
 	return fmt.Sprintf("test_sarama_cluster_%d", time.Now().UnixNano())
+}
+
+func newConsumerProcess(clientID, groupID string, topics []string, handler cluster.Handler) (cluster.Consumer, error) {
+	config := sarama.NewConfig()
+	config.ClientID = clientID
+	config.Version = sarama.V1_0_0_0
+	config.Consumer.Return.Errors = true
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	return cluster.NewConsumer(testKafkaBrokers, groupID, topics, config, handler)
+}
+
+func newConsumer(clientID, groupID string, topics ...string) (cluster.Consumer, error) {
+	return newConsumerProcess(clientID, groupID, topics, nil)
+}
+
+func withinFiveSec(v interface{}) GomegaAsyncAssertion {
+	return Eventually(v, "5s", "50ms")
+}
+
+func claimsOf(c cluster.Consumer) GomegaAsyncAssertion {
+	return withinFiveSec(func() map[string][]int32 {
+		select {
+		case claim := <-c.Claims():
+			if claim != nil {
+				return claim.Topics
+			}
+		default:
+		}
+		return nil
+	})
 }
 
 // --------------------------------------------------------------------
@@ -74,3 +106,19 @@ type testConsumerMessage struct {
 	sarama.ConsumerMessage
 	ClientID string
 }
+
+type countingHandler struct{ sessions, messages int32 }
+
+func (h *countingHandler) ProcessLoop(pc cluster.PartitionConsumer) error {
+	atomic.AddInt32(&h.sessions, 1)
+	defer atomic.AddInt32(&h.sessions, -1)
+
+	// start seemingly endless loop
+	for range pc.Messages() {
+		atomic.AddInt32(&h.messages, 1)
+	}
+	return nil
+}
+
+func (h *countingHandler) NumSessions() int { return int(atomic.LoadInt32(&h.sessions)) }
+func (h *countingHandler) NumMessages() int { return int(atomic.LoadInt32(&h.messages)) }
