@@ -82,19 +82,11 @@ func main() {
 }
 
 func handler(pc cluster.PartitionConsumer) error {
-	for {
-		select {
-		case msg, more := <-pc.Messages():
-			if !more {
-				return nil
-			}
-
-			fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
-			pc.MarkMessage(msg, "")
-		case <-pc.Done():
-			return nil
-		}
+	for msg := range pc.Messages() {
+		fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
+		pc.MarkMessage(msg, "")
 	}
+	return nil
 }
 
 func printErrorAndExit(code int, format string, values ...interface{}) {
