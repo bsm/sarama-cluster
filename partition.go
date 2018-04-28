@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"sync"
+
 	"github.com/Shopify/sarama"
 )
 
@@ -39,6 +41,9 @@ type partitionConsumer struct {
 	*partitionOffsetManager
 	sarama.ConsumerGroupSession
 	sarama.PartitionConsumer
+
+	closeOnce sync.Once
+	lastErr   error
 }
 
 func (c *partitionConsumer) Topic() string    { return c.topic }
@@ -47,4 +52,13 @@ func (c *partitionConsumer) MarkMessage(msg *sarama.ConsumerMessage, metadata st
 	if msg.Topic == c.topic && msg.Partition == c.partition {
 		c.markOffset(msg.Offset+1, metadata)
 	}
+}
+
+// Close closes the partition consumer and returns the last error
+// Not exposed via interface.
+func (c *partitionConsumer) Close() error {
+	c.closeOnce.Do(func() {
+		c.lastErr = c.PartitionConsumer.Close()
+	})
+	return c.lastErr
 }

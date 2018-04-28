@@ -6,42 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Consumer", func() {
-
-	newConsumerProcess := func(clientID, groupID string, topics []string, handler cluster.Handler) (cluster.Consumer, error) {
-		config := sarama.NewConfig()
-		config.ClientID = clientID
-		config.Version = sarama.V1_0_0_0
-		config.Consumer.Return.Errors = true
-		config.Consumer.Offsets.Initial = sarama.OffsetOldest
-		return cluster.NewConsumer(testKafkaBrokers, groupID, topics, config, handler)
-	}
-
-	newConsumer := func(clientID, groupID string, topics ...string) (cluster.Consumer, error) {
-		return newConsumerProcess(clientID, groupID, topics, cluster.HandlerFunc(func(pc cluster.PartitionConsumer) error {
-			<-pc.Done()
-			return nil
-		}))
-	}
-
-	claimsOf := func(c cluster.Consumer) GomegaAsyncAssertion {
-		return Eventually(func() map[string][]int32 {
-			select {
-			case claim := <-c.Claims():
-				if claim != nil {
-					return claim.Topics
-				}
-			default:
-			}
-			return nil
-		}, "5s", "50ms")
-	}
 
 	It("should init and share", func() {
 		groupID := newTestConsumerGroupID()
@@ -140,6 +110,31 @@ var _ = Describe("Consumer", func() {
 		Expect(m3.Close()).To(Succeed())
 		Expect(m4.Close()).To(Succeed())
 		Expect(m5.Close()).To(Succeed())
+	})
+
+	It("should restart handlers on rebalance", func() {
+		groupID := newTestConsumerGroupID()
+		handler := new(countingHandler)
+
+		// start M1 & wait
+		m1, err := newConsumerProcess("M1", groupID, testTopics, handler)
+		Expect(err).NotTo(HaveOccurred())
+		defer m1.Close()
+		withinFiveSec(handler.NumSessions).Should(Equal(8))
+
+		// start M2 & wait
+		m2, err := newConsumer("M2", groupID, testTopics...)
+		Expect(err).NotTo(HaveOccurred())
+		defer m2.Close()
+		withinFiveSec(handler.NumSessions).Should(Equal(4))
+
+		// Close M2, wait for M1 to take over
+		Expect(m2.Close()).To(Succeed())
+		withinFiveSec(handler.NumSessions).Should(Equal(8))
+
+		// Close M1
+		Expect(m1.Close()).To(Succeed())
+		withinFiveSec(handler.NumSessions).Should(Equal(0))
 	})
 
 	It("should allow change topics", func() {
