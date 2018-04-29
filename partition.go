@@ -43,7 +43,6 @@ type partitionConsumer struct {
 	sarama.PartitionConsumer
 
 	closeOnce sync.Once
-	lastErr   error
 }
 
 func (c *partitionConsumer) Topic() string    { return c.topic }
@@ -54,11 +53,21 @@ func (c *partitionConsumer) MarkMessage(msg *sarama.ConsumerMessage, metadata st
 	}
 }
 
-// Close closes the partition consumer and returns the last error
-// Not exposed via interface.
-func (c *partitionConsumer) Close() error {
+// Wraps PartitionConsumer.AsyncClose in a sync.Once.
+func (c *partitionConsumer) safeClose() {
 	c.closeOnce.Do(func() {
-		c.lastErr = c.PartitionConsumer.Close()
+		c.PartitionConsumer.AsyncClose()
 	})
-	return c.lastErr
+}
+
+// Drains messages and errors. Ensures the consumer is fully closed.
+// Make sure to call this function AFTER the ProcessLoop has exited.
+func (c *partitionConsumer) wait(handleError func(err error)) {
+	go func() {
+		for range c.PartitionConsumer.Messages() {
+		}
+	}()
+	for err := range c.PartitionConsumer.Errors() {
+		handleError(err)
+	}
 }

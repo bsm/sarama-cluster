@@ -43,7 +43,7 @@ func claimsOf(c cluster.Consumer) GomegaAsyncAssertion {
 		select {
 		case claim := <-c.Claims():
 			if claim != nil {
-				return claim.Topics
+				return claim.Current
 			}
 		default:
 		}

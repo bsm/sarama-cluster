@@ -44,7 +44,7 @@ func Example() {
 	// consume claims
 	go func() {
 		for claim := range consumer.Claims() {
-			log.Printf("Claimed: %+v\n", claim.Topics)
+			log.Printf("Claimed: %+v\n", claim.Current)
 		}
 	}()
 
