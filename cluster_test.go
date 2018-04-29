@@ -1,117 +1,98 @@
-package cluster
+package cluster_test
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
+	cluster "github.com/bsm/sarama-cluster"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-const (
-	testGroup     = "sarama-cluster-group"
-	testKafkaData = "/tmp/sarama-cluster-test"
-)
-
 var (
-	testKafkaRoot  = "kafka_2.12-1.0.0"
-	testKafkaAddrs = []string{"127.0.0.1:29092"}
-	testTopics     = []string{"topic-a", "topic-b"}
-
-	testClient              sarama.Client
-	testKafkaCmd, testZkCmd *exec.Cmd
+	testTopics       = []string{"topic-a", "topic-b"}
+	testKafkaBrokers = []string{"127.0.0.1:29091", "127.0.0.1:29092", "127.0.0.1:29093"}
 )
 
-func init() {
-	if dir := os.Getenv("KAFKA_DIR"); dir != "" {
-		testKafkaRoot = dir
-	}
+func newTestConsumerGroupID() string {
+	return fmt.Sprintf("test_sarama_cluster_%d", time.Now().UnixNano())
 }
 
-var _ = Describe("offsetInfo", func() {
+func newConsumerProcess(clientID, groupID string, topics []string, handler cluster.Handler) (cluster.Consumer, error) {
+	config := sarama.NewConfig()
+	config.ClientID = clientID
+	config.Version = sarama.V1_0_0_0
+	config.Consumer.Return.Errors = true
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	return cluster.NewConsumer(testKafkaBrokers, groupID, topics, config, handler)
+}
 
-	It("should calculate next offset", func() {
-		Expect(offsetInfo{-2, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(sarama.OffsetOldest))
-		Expect(offsetInfo{-2, ""}.NextOffset(sarama.OffsetNewest)).To(Equal(sarama.OffsetNewest))
-		Expect(offsetInfo{-1, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(sarama.OffsetOldest))
-		Expect(offsetInfo{-1, ""}.NextOffset(sarama.OffsetNewest)).To(Equal(sarama.OffsetNewest))
-		Expect(offsetInfo{0, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(int64(0)))
-		Expect(offsetInfo{100, ""}.NextOffset(sarama.OffsetOldest)).To(Equal(int64(100)))
+func newConsumer(clientID, groupID string, topics ...string) (cluster.Consumer, error) {
+	return newConsumerProcess(clientID, groupID, topics, nil)
+}
+
+func withinFiveSec(v interface{}) GomegaAsyncAssertion {
+	return Eventually(v, "5s", "50ms")
+}
+
+func claimsOf(c cluster.Consumer) GomegaAsyncAssertion {
+	return withinFiveSec(func() map[string][]int32 {
+		select {
+		case claim := <-c.Claims():
+			if claim != nil {
+				return claim.Current
+			}
+		default:
+		}
+		return nil
 	})
-
-})
-
-var _ = Describe("int32Slice", func() {
-
-	It("should diff", func() {
-		Expect(((int32Slice)(nil)).Diff(int32Slice{1, 3, 5})).To(BeNil())
-		Expect(int32Slice{1, 3, 5}.Diff((int32Slice)(nil))).To(Equal([]int32{1, 3, 5}))
-		Expect(int32Slice{1, 3, 5}.Diff(int32Slice{1, 3, 5})).To(BeNil())
-		Expect(int32Slice{1, 3, 5}.Diff(int32Slice{1, 2, 3, 4, 5})).To(BeNil())
-		Expect(int32Slice{1, 3, 5}.Diff(int32Slice{2, 3, 4})).To(Equal([]int32{1, 5}))
-		Expect(int32Slice{1, 3, 5}.Diff(int32Slice{1, 4})).To(Equal([]int32{3, 5}))
-		Expect(int32Slice{1, 3, 5}.Diff(int32Slice{2, 5})).To(Equal([]int32{1, 3}))
-	})
-
-})
+}
 
 // --------------------------------------------------------------------
 
 var _ = BeforeSuite(func() {
-	testZkCmd = testCmd(
-		testDataDir(testKafkaRoot, "bin", "kafka-run-class.sh"),
-		"org.apache.zookeeper.server.quorum.QuorumPeerMain",
-		testDataDir("zookeeper.properties"),
-	)
+	config := sarama.NewConfig()
+	config.Version = sarama.V1_0_0_0
+	config.Net.DialTimeout = time.Second
+	config.Net.ReadTimeout = 2 * time.Second
+	config.Net.WriteTimeout = 2 * time.Second
 
-	testKafkaCmd = testCmd(
-		testDataDir(testKafkaRoot, "bin", "kafka-run-class.sh"),
-		"-name", "kafkaServer", "kafka.Kafka",
-		testDataDir("server.properties"),
-	)
+	client, err := sarama.NewClient(testKafkaBrokers, config)
+	Expect(err).NotTo(HaveOccurred())
+	defer client.Close()
 
-	// Remove old test data before starting
-	Expect(os.RemoveAll(testKafkaData)).NotTo(HaveOccurred())
-
-	Expect(os.MkdirAll(testKafkaData, 0777)).To(Succeed())
-	Expect(testZkCmd.Start()).To(Succeed())
-	Expect(testKafkaCmd.Start()).To(Succeed())
-
-	// Wait for client
-	Eventually(func() error {
-		var err error
-
-		// sync-producer requires Return.Successes set to true
-		testConf := sarama.NewConfig()
-		testConf.Producer.Return.Successes = true
-		testClient, err = sarama.NewClient(testKafkaAddrs, testConf)
-		return err
-	}, "30s", "1s").Should(Succeed())
-
-	// Ensure we can retrieve partition info
-	Eventually(func() error {
-		_, err := testClient.Partitions(testTopics[0])
-		return err
-	}, "30s", "1s").Should(Succeed())
-
-	// Seed a few messages
-	Expect(testSeed(1000, testTopics)).To(Succeed())
-})
-
-var _ = AfterSuite(func() {
-	if testClient != nil {
-		_ = testClient.Close()
+	// Check brokers and topic
+	Expect(client.Brokers()).To(HaveLen(3))
+	for _, topic := range testTopics {
+		Expect(client.Topics()).To(ContainElement(topic))
 	}
 
-	_ = testKafkaCmd.Process.Kill()
-	_ = testZkCmd.Process.Kill()
-	_ = testKafkaCmd.Wait()
-	_ = testZkCmd.Wait()
-	_ = os.RemoveAll(testKafkaData)
+	// Seed partitions
+	value := sarama.ByteEncoder([]byte("testdata"))
+	producer, err := sarama.NewAsyncProducerFromClient(client)
+	Expect(err).NotTo(HaveOccurred())
+
+	for _, topic := range testTopics {
+		Expect(client.Partitions(topic)).To(HaveLen(4), "for topic %q", topic)
+
+		max := int64(0)
+		for partition := int32(0); partition < 4; partition++ {
+			offset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
+			Expect(err).NotTo(HaveOccurred(), "for topic %q", topic)
+
+			if offset > max {
+				max = offset
+			}
+		}
+
+		for i := max; i < 21000; i++ {
+			producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: value}
+		}
+	}
+	Expect(producer.Close()).To(Succeed())
 })
 
 // --------------------------------------------------------------------
@@ -121,81 +102,23 @@ func TestSuite(t *testing.T) {
 	RunSpecs(t, "sarama/cluster")
 }
 
-func testDataDir(tokens ...string) string {
-	tokens = append([]string{"testdata"}, tokens...)
-	return filepath.Join(tokens...)
+type testConsumerMessage struct {
+	sarama.ConsumerMessage
+	ClientID string
 }
 
-func testSeed(n int, testTopics []string) error {
-	producer, err := sarama.NewSyncProducerFromClient(testClient)
-	if err != nil {
-		return err
-	}
-	defer producer.Close()
+type countingHandler struct{ sessions, messages int32 }
 
-	for i := 0; i < n; i++ {
-		kv := sarama.StringEncoder(fmt.Sprintf("PLAINDATA-%08d", i))
-		for _, t := range testTopics {
-			msg := &sarama.ProducerMessage{Topic: t, Key: kv, Value: kv}
-			if _, _, err := producer.SendMessage(msg); err != nil {
-				return err
-			}
-		}
+func (h *countingHandler) ProcessLoop(pc cluster.PartitionConsumer) error {
+	atomic.AddInt32(&h.sessions, 1)
+	defer atomic.AddInt32(&h.sessions, -1)
+
+	// start seemingly endless loop
+	for range pc.Messages() {
+		atomic.AddInt32(&h.messages, 1)
 	}
 	return nil
 }
 
-func testCmd(name string, arg ...string) *exec.Cmd {
-	cmd := exec.Command(name, arg...)
-	if testing.Verbose() || os.Getenv("CI") != "" {
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-	}
-	cmd.Env = []string{"KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"}
-	return cmd
-}
-
-type testConsumerMessage struct {
-	sarama.ConsumerMessage
-	ConsumerID string
-}
-
-// --------------------------------------------------------------------
-
-var _ sarama.Consumer = &mockConsumer{}
-var _ sarama.PartitionConsumer = &mockPartitionConsumer{}
-
-type mockClient struct {
-	sarama.Client
-
-	topics map[string][]int32
-}
-type mockConsumer struct{ sarama.Consumer }
-type mockPartitionConsumer struct {
-	sarama.PartitionConsumer
-
-	Topic     string
-	Partition int32
-	Offset    int64
-}
-
-func (m *mockClient) Partitions(t string) ([]int32, error) {
-	pts, ok := m.topics[t]
-	if !ok {
-		return nil, sarama.ErrInvalidTopic
-	}
-	return pts, nil
-}
-
-func (*mockConsumer) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
-	if offset > -1 && offset < 1000 {
-		return nil, sarama.ErrOffsetOutOfRange
-	}
-	return &mockPartitionConsumer{
-		Topic:     topic,
-		Partition: partition,
-		Offset:    offset,
-	}, nil
-}
-
-func (*mockPartitionConsumer) Close() error { return nil }
+func (h *countingHandler) NumSessions() int { return int(atomic.LoadInt32(&h.sessions)) }
+func (h *countingHandler) NumMessages() int { return int(atomic.LoadInt32(&h.messages)) }

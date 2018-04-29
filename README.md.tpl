@@ -9,7 +9,7 @@ Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go clien
 
 ## Documentation
 
-Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
+Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster.
 
 ## Examples
 
@@ -20,33 +20,16 @@ topics and partitions are all passed to the single channel:
 package main
 
 import (
-	"fmt"
-	"log"
-	"os"
-	"os/signal"
-
-	cluster "github.com/bsm/sarama-cluster"
-)
-
-func main() {{ "ExampleConsumer" | code }}
-```
-
-Users who require access to individual partitions can use the partitioned mode which exposes access to partition-level
-consumers:
-
-```go
-package main
-
-import (
   "fmt"
   "log"
   "os"
   "os/signal"
 
+  "github.com/Shopify/sarama"
   cluster "github.com/bsm/sarama-cluster"
 )
 
-func main() {{ "ExampleConsumer_Partitions" | code }}
+func main() {{ "Example" | code }}
 ```
 
 ## Running tests
@@ -56,7 +39,9 @@ http://onsi.github.io/ginkgo for more details.
 
 To run tests, call:
 
-	$ make test
+```shell
+$ make test
+```
 
 ## Troubleshooting
 

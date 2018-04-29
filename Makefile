@@ -1,35 +1,35 @@
-SCALA_VERSION?= 2.12
-KAFKA_VERSION?= 1.0.1
-KAFKA_DIR= kafka_$(SCALA_VERSION)-$(KAFKA_VERSION)
-KAFKA_SRC= https://archive.apache.org/dist/kafka/$(KAFKA_VERSION)/$(KAFKA_DIR).tgz
-KAFKA_ROOT= testdata/$(KAFKA_DIR)
 PKG=$(shell go list ./... | grep -v vendor)
+KAFKA_VERSION=1.0.1
 
 default: vet test
 
 vet:
 	go vet $(PKG)
 
-test: testdeps
-	KAFKA_DIR=$(KAFKA_DIR) go test $(PKG) -ginkgo.slowSpecThreshold=60
+test:
+	go test $(PKG) -ginkgo.slowSpecThreshold=60
 
-test-verbose: testdeps
-	KAFKA_DIR=$(KAFKA_DIR) go test $(PKG) -ginkgo.slowSpecThreshold=60 -v
+test-verbose:
+	go test $(PKG) -ginkgo.slowSpecThreshold=60 -v
 
-test-race: testdeps
-	KAFKA_DIR=$(KAFKA_DIR) go test $(PKG) -ginkgo.slowSpecThreshold=60 -v -race
+test-race:
+	go test $(PKG) -ginkgo.slowSpecThreshold=60 -v -race
 
-testdeps: $(KAFKA_ROOT)
+.PHONY: vet test test-race test-verbose
+
+scenario.up:
+	docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml up
+
+scenario.rm:
+	docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml rm -f
+
+.PHONY: scenario.up scenario.rm
 
 doc: README.md
 
-.PHONY: test testdeps vet doc
+.PHONY: doc
 
 # ---------------------------------------------------------------------
-
-$(KAFKA_ROOT):
-	@mkdir -p $(dir $@)
-	cd $(dir $@) && curl -sSL $(KAFKA_SRC) | tar xz
 
 README.md: README.md.tpl $(wildcard *.go)
 	becca -package $(subst $(GOPATH)/src/,,$(PWD))

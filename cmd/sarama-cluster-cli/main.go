@@ -35,12 +35,12 @@ func main() {
 	}
 
 	// Init config
-	config := cluster.NewConfig()
+	config := sarama.NewConfig()
+	config.Version = sarama.V0_10_2_0
 	if *verbose {
 		sarama.Logger = logger
 	} else {
 		config.Consumer.Return.Errors = true
-		config.Group.Return.Notifications = true
 	}
 
 	switch *offset {
@@ -52,37 +52,41 @@ func main() {
 		printUsageErrorAndExit("-offset should be `oldest` or `newest`")
 	}
 
+	brokers := strings.Split(*brokerList, ",")
+	topics := strings.Split(*topicList, ",")
+
 	// Init consumer, consume errors & messages
-	consumer, err := cluster.NewConsumer(strings.Split(*brokerList, ","), *groupID, strings.Split(*topicList, ","), config)
+	consumer, err := cluster.NewConsumer(brokers, *groupID, topics, config, cluster.HandlerFunc(handler))
 	if err != nil {
 		printErrorAndExit(69, "Failed to start consumer: %s", err)
 	}
 	defer consumer.Close()
 
-	// Create signal channel
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-
-	// Consume all channels, wait for signal to exit
-	for {
-		select {
-		case msg, more := <-consumer.Messages():
-			if more {
-				fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
-				consumer.MarkOffset(msg, "")
-			}
-		case ntf, more := <-consumer.Notifications():
-			if more {
-				logger.Printf("Rebalanced: %+v\n", ntf)
-			}
-		case err, more := <-consumer.Errors():
-			if more {
-				logger.Printf("Error: %s\n", err.Error())
-			}
-		case <-sigchan:
-			return
+	// Consume (and ignore) claims channel
+	go func() {
+		for range consumer.Claims() {
 		}
+	}()
+
+	// Consume errors channel and log
+	go func() {
+		for err := range consumer.Errors() {
+			logger.Printf("Error: %v\n", err)
+		}
+	}()
+
+	// Create signal channel, wait for shutdown
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+	<-shutdown
+}
+
+func handler(pc cluster.PartitionConsumer) error {
+	for msg := range pc.Messages() {
+		fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
+		pc.MarkMessage(msg, "")
 	}
+	return nil
 }
 
 func printErrorAndExit(code int, format string, values ...interface{}) {

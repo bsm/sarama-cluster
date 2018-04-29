@@ -1,25 +1,32 @@
 package cluster
 
-// Strategy for partition to consumer assignement
-type Strategy string
+type none struct{}
 
-const (
-	// StrategyRange is the default and assigns partition ranges to consumers.
-	// Example with six partitions and two consumers:
-	//   C1: [0, 1, 2]
-	//   C2: [3, 4, 5]
-	StrategyRange Strategy = "range"
-
-	// StrategyRoundRobin assigns partitions by alternating over consumers.
-	// Example with six partitions and two consumers:
-	//   C1: [0, 2, 4]
-	//   C2: [1, 3, 5]
-	StrategyRoundRobin Strategy = "roundrobin"
-)
-
-// Error instances are wrappers for internal errors with a context and
-// may be returned through the consumer's Errors() channel
-type Error struct {
-	Ctx string
-	error
+// Handler instances are able to consume from PartitionConsumer instances.
+// PLEASE NOTE that handlers are likely be called from several goroutines concurrently.
+// Ensure that all state is safely protected against race conditions.
+type Handler interface {
+	// ProcessLoop must start a consumer loop of PartitionConsumer's Messages()
+	// while listening to the Done() channel. Once triggered, the Handler must
+	// finish its processing loop and exit within Config.Consumer.Group.Rebalance.Timeout
+	// as the topic/partition may be re-assigned to another group member.
+	ProcessLoop(PartitionConsumer) error
 }
+
+// HandlerFunc is a Handler function shortcut.
+type HandlerFunc func(PartitionConsumer) error
+
+// ProcessLoop implements the Handler interface.
+func (f HandlerFunc) ProcessLoop(c PartitionConsumer) error { return f(c) }
+
+// Claim is a notification issued by a consumer to indicate
+// the claimed topics after a rebalance.
+type Claim struct {
+	// Current lists the currently claimed topics and partitions
+	Current map[string][]int32
+}
+
+var noopHandler = HandlerFunc(func(pc PartitionConsumer) error {
+	<-pc.Done()
+	return nil
+})
