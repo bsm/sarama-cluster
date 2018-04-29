@@ -22,8 +22,8 @@ func (f HandlerFunc) ProcessLoop(c PartitionConsumer) error { return f(c) }
 // Claim is a notification issued by a consumer to indicate
 // the claimed topics after a rebalance.
 type Claim struct {
-	// Topics of claimed topics and partitions
-	Topics map[string][]int32
+	// Current lists the currently claimed topics and partitions
+	Current map[string][]int32
 }
 
 var noopHandler = HandlerFunc(func(pc PartitionConsumer) error {

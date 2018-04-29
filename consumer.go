@@ -236,7 +236,7 @@ func (c *consumer) nextSession(topics []string) (bool, error) {
 		claims[topic] = append(claims[topic], partitions...)
 	}
 	select {
-	case c.claims <- &Claim{Topics: claims}:
+	case c.claims <- &Claim{Current: claims}:
 	default:
 	}
 
@@ -257,9 +257,7 @@ func (c *consumer) nextSession(topics []string) (bool, error) {
 				defer sess.Stop()
 
 				pom := som.Get(topic, partition)
-				if err := c.consume(sess, pom, topic, partition); err != nil {
-					c.handleError(err)
-				}
+				c.consume(sess, pom, topic, partition)
 			}(topic, partition)
 		}
 	}
@@ -268,19 +266,27 @@ func (c *consumer) nextSession(topics []string) (bool, error) {
 	return false, nil
 }
 
-func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffsetManager, topic string, partition int32) *sarama.ConsumerError {
-	// quick exit if relance is due
+// Consume starts a partition consumer instance for a single topic-partition.
+// To ensure that messages are processed uniquely we need to work around some of the sarama
+// internals:
+// - PartitionConsumer.Close drains the messages channel which will potentially result in some of the messages
+//   being lost. We must call PartitionConsumer.AsyncClose instead.
+// - PartitionConsumer.AsyncClose cannot be called multiple times, we need to wrap it in a sync.Once.
+// - We must drain PartitionConsumer.Errors BEFORE we exit this function, to ensure we don't push to
+//   our own c.errors channel that may be closed by then.
+func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffsetManager, topic string, partition int32) {
+	// quick exit if rebalance is due
 	select {
 	case <-sess.Done():
-		return nil
+		return
 	default:
 	}
 
 	// get next offset
 	offset := pom.nextOffset(c.config.Consumer.Offsets.Initial)
 
-	// init partition consumer, resume from default offset, if requested offset is out-of-range
-	// don't defer pmc.Close(), pcm will be be closed by wrap below
+	// init partition consumer, resume from default offset, if requested offset is out-of-range.
+	// don't defer pcm.Close(), pcm needs safeClose and will be be closed by wrapper below.
 	pcm, err := c.consumers.ConsumePartition(topic, partition, offset)
 	if err == sarama.ErrOffsetOutOfRange {
 		pom.reset()
@@ -288,8 +294,10 @@ func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffse
 		pcm, err = c.consumers.ConsumePartition(topic, partition, offset)
 	}
 	if err != nil {
-		return consumerError(err, topic, partition)
+		c.handleError(consumerError(err, topic, partition))
+		return
 	}
+
 	// handle consumer errors
 	go func() {
 		for err := range pcm.Errors() {
@@ -298,7 +306,7 @@ func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffse
 	}()
 
 	// init partition consumer wrapper
-	wrap := &partitionConsumer{
+	pcw := &partitionConsumer{
 		topic:     topic,
 		partition: partition,
 
@@ -306,19 +314,22 @@ func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffse
 		PartitionConsumer:      pcm,
 		ConsumerGroupSession:   sess,
 	}
-	defer wrap.Close()
 
-	// close when session is done
+	// trigger close when session is done
 	go func() {
 		<-sess.Done()
-		wrap.Close()
+		pcw.safeClose()
 	}()
 
 	// start processing
-	if err := c.handler.ProcessLoop(wrap); err != nil {
-		return consumerError(err, topic, partition)
+	if err := c.handler.ProcessLoop(pcw); err != nil {
+		c.handleError(err)
 	}
-	return consumerError(wrap.Close(), topic, partition)
+
+	// ensure consumer is clased & drained
+	pcw.safeClose()
+	pcw.wait(c.handleError)
+	return
 }
 
 func (c *consumer) handleError(err error) {
