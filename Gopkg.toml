@@ -23,4 +23,4 @@
 [[constraint]]
   name = "github.com/Shopify/sarama"
   source = "github.com/bsm/sarama-1"
-  branch = "feature/consumer-groups"
+  branch = "feature/higher-level-consumer-groups"

@@ -109,7 +109,7 @@ type testConsumerMessage struct {
 
 type countingHandler struct{ sessions, messages int32 }
 
-func (h *countingHandler) ProcessLoop(pc cluster.PartitionConsumer) error {
+func (h *countingHandler) ProcessPartition(pc cluster.PartitionConsumer) error {
 	atomic.AddInt32(&h.sessions, 1)
 	defer atomic.AddInt32(&h.sessions, -1)
 

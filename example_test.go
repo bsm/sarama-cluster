@@ -11,6 +11,11 @@ import (
 )
 
 func Example() {
+	var (
+		brokers = []string{"127.0.0.1:9092"}
+		topics  = []string{"my_topic", "other_topic"}
+	)
+
 	config := sarama.NewConfig()
 	config.ClientID = "my-client"
 	config.Version = sarama.V0_10_2_0
@@ -26,8 +31,6 @@ func Example() {
 	})
 
 	// init consumer
-	brokers := []string{"127.0.0.1:9092"}
-	topics := []string{"my_topic", "other_topic"}
 	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config, handler)
 	if err != nil {
 		panic(err)

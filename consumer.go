@@ -33,17 +33,17 @@ type consumer struct {
 	config    *sarama.Config
 	handler   Handler
 
-	consumers sarama.Consumer
-	group     sarama.ConsumerGroup
+	group sarama.ConsumerGroup
 
 	topics   []string
 	topicsMu sync.RWMutex
 
 	claims    chan *Claim
 	errors    chan error
-	shutdown  chan none // closed on shutdown to signal that shutdown in imminent
-	stopped   chan none // closed on mainLoop exit to signal that all processing has stopped
 	rebalance chan none
+
+	closing   chan none
+	closed    chan none
 	closeOnce sync.Once
 }
 
@@ -79,7 +79,7 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 		return nil, sarama.ConfigurationError("consumer groups require Version to be >= V0_10_2_0")
 	}
 
-	consumers, err := sarama.NewConsumerFromClient(client)
+	group, err := sarama.NewConsumerGroupFromClient(groupID, client)
 	if err != nil {
 		return nil, err
 	}
@@ -93,14 +93,13 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 		topics:    topics,
 		client:    client,
 		config:    config,
-		consumers: consumers,
-		group:     sarama.NewConsumerGroupFromClient(groupID, client),
+		group:     group,
 		handler:   handler,
 		claims:    make(chan *Claim, config.ChannelBufferSize),
 		errors:    make(chan error, config.ChannelBufferSize),
-		shutdown:  make(chan none),
-		stopped:   make(chan none),
 		rebalance: make(chan none, 1),
+		closing:   make(chan none, 1),
+		closed:    make(chan none, 1),
 	}
 	go c.mainLoop()
 	return c, nil
@@ -122,23 +121,14 @@ func (c *consumer) Topics() []string {
 	return topics
 }
 
-func (c *consumer) Close() (err error) {
+func (c *consumer) Close() error {
+	var err error
 	c.closeOnce.Do(func() {
-		// init shutdown, wait for sessions to exit
-		close(c.shutdown)
+		close(c.closing)
+		<-c.closed
 
-		// close consumers first to stop process loops
-		if e := c.consumers.Close(); e != nil {
-			err = e
-		}
-
-		// wait until all loops have exited
-		<-c.stopped
-
-		// close the group, perform a final commit
-		if e := c.group.Close(); e != nil {
-			err = e
-		}
+		// close consumer group
+		err = c.group.Close()
 
 		// close client if one was created by us
 		if c.ownClient {
@@ -147,20 +137,11 @@ func (c *consumer) Close() (err error) {
 			}
 		}
 
-		// consume errors
-		go func() {
-			close(c.errors)
-			close(c.claims)
-		}()
-		for range c.claims {
-		}
-		for e := range c.errors {
-			if e != nil {
-				err = e
-			}
-		}
+		// close channels
+		close(c.claims)
+		close(c.errors)
 	})
-	return
+	return err
 }
 
 func (c *consumer) SetTopics(topics ...string) {
@@ -176,7 +157,7 @@ func (c *consumer) SetTopics(topics ...string) {
 }
 
 func (c *consumer) mainLoop() {
-	defer close(c.stopped)
+	defer close(c.closed)
 
 	for {
 		// drain rebalance channel
@@ -185,9 +166,9 @@ func (c *consumer) mainLoop() {
 		default:
 		}
 
-		// exit on shutdown
+		// check if closing
 		select {
-		case <-c.shutdown:
+		case <-c.closing:
 			return
 		default:
 		}
@@ -199,144 +180,62 @@ func (c *consumer) mainLoop() {
 			continue
 		}
 
-		// start next session
-		done, err := c.nextSession(topics)
-		if err != nil {
+		if err := c.nextSession(topics); err != nil {
 			c.handleError(err)
 			c.backoff()
-		} else if done {
-			return
 		}
 	}
 }
 
-func (c *consumer) nextSession(topics []string) (bool, error) {
+func (c *consumer) nextSession(topics []string) error {
+	// start a new session
 	sess, err := c.group.Subscribe(topics)
-	if err == sarama.ErrClosedConsumerGroup {
-		return true, nil
-	} else if err != nil {
-		return false, err
+	if err != nil {
+		return err
 	}
 	defer sess.Close()
 
-	// stop session on rebalance and shudown
+	// listen for rebalance, close the session
 	go func() {
+		defer sess.Cancel()
+
 		select {
-		case <-sess.Done():
+		case <-c.closing:
 		case <-c.rebalance:
-			sess.Stop()
-		case <-c.shutdown:
-			sess.Stop()
+		case <-sess.Done():
 		}
 	}()
 
-	// try to issue claims
-	claims := make(map[string][]int32, len(sess.Claims()))
-	for topic, partitions := range sess.Claims() {
-		claims[topic] = append(claims[topic], partitions...)
-	}
-	select {
-	case c.claims <- &Claim{Current: claims}:
-	default:
-	}
-
-	// create an offset manager for the session
-	som, err := newSessionOffsetManager(sess, c.groupID, c.client, c.handleError)
-	if err != nil {
-		return false, err
-	}
-	defer som.Stop()
-
-	var wg sync.WaitGroup
-	for topic, partitions := range claims {
-		for _, partition := range partitions {
-			wg.Add(1)
-
-			go func(topic string, partition int32) {
-				defer wg.Done()
-				defer sess.Stop()
-
-				pom := som.Get(topic, partition)
-				c.consume(sess, pom, topic, partition)
-			}(topic, partition)
-		}
-	}
-	wg.Wait()
-
-	return false, nil
-}
-
-// Consume starts a partition consumer instance for a single topic-partition.
-// To ensure that messages are processed uniquely we need to work around some of the sarama
-// internals:
-// - PartitionConsumer.Close drains the messages channel which will potentially result in some of the messages
-//   being lost. We must call PartitionConsumer.AsyncClose instead.
-// - PartitionConsumer.AsyncClose cannot be called multiple times, we need to wrap it in a sync.Once.
-// - We must drain PartitionConsumer.Errors BEFORE we exit this function, to ensure we don't push to
-//   our own c.errors channel that may be closed by then.
-func (c *consumer) consume(sess sarama.ConsumerGroupSession, pom *partitionOffsetManager, topic string, partition int32) {
-	// quick exit if rebalance is due
-	select {
-	case <-sess.Done():
-		return
-	default:
-	}
-
-	// get next offset
-	offset := pom.nextOffset(c.config.Consumer.Offsets.Initial)
-
-	// init partition consumer, resume from default offset, if requested offset is out-of-range.
-	// don't defer pcm.Close(), pcm needs safeClose and will be be closed by wrapper below.
-	pcm, err := c.consumers.ConsumePartition(topic, partition, offset)
-	if err == sarama.ErrOffsetOutOfRange {
-		pom.reset()
-		offset = c.config.Consumer.Offsets.Initial
-		pcm, err = c.consumers.ConsumePartition(topic, partition, offset)
-	}
-	if err != nil {
-		c.handleError(consumerError(err, topic, partition))
-		return
-	}
-
-	// handle consumer errors
+	// handle errors
 	go func() {
-		for err := range pcm.Errors() {
+		for err := range sess.Errors() {
 			c.handleError(err)
 		}
 	}()
 
-	// init partition consumer wrapper
-	pcw := &partitionConsumer{
-		topic:     topic,
-		partition: partition,
-
-		partitionOffsetManager: pom,
-		PartitionConsumer:      pcm,
-		ConsumerGroupSession:   sess,
+	// issue rebalance notification about new claims
+	select {
+	case c.claims <- &Claim{Current: sess.Claims()}:
+	default:
 	}
 
-	// trigger close when session is done
-	go func() {
-		<-sess.Done()
-		pcw.safeClose()
-	}()
+	// start consumer loop, blocking
+	sess.Consume(sarama.ConsumerGroupHandlerFunc(func(claim sarama.ConsumerGroupClaim) error {
+		return c.handler.ProcessPartition(&partitionConsumer{
+			ConsumerGroupClaim: claim,
+			sess:               sess,
+		})
+	}))
 
-	// start processing
-	if err := c.handler.ProcessLoop(pcw); err != nil {
-		c.handleError(err)
-	}
-
-	// ensure consumer is clased & drained
-	pcw.safeClose()
-	pcw.wait(c.handleError)
-	return
+	// close session explicitly
+	return sess.Close()
 }
 
 func (c *consumer) handleError(err error) {
 	if c.config.Consumer.Return.Errors {
 		select {
 		case c.errors <- err:
-		case <-c.shutdown:
+		case <-c.closing:
 		}
 	} else {
 		sarama.Logger.Println(err)
@@ -349,20 +248,6 @@ func (c *consumer) backoff() {
 
 	select {
 	case <-backoff.C:
-	case <-c.shutdown:
-	}
-}
-
-func consumerError(err error, topic string, partition int32) *sarama.ConsumerError {
-	if err == nil {
-		return nil
-	}
-	if cerr, ok := err.(*sarama.ConsumerError); ok {
-		return cerr
-	}
-	return &sarama.ConsumerError{
-		Err:       err,
-		Topic:     topic,
-		Partition: partition,
+	case <-c.closing:
 	}
 }
