@@ -83,7 +83,7 @@ func main() {
 
 func handler(pc cluster.PartitionConsumer) error {
 	for msg := range pc.Messages() {
-		fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
+		fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
 		pc.MarkMessage(msg, "")
 	}
 	return nil

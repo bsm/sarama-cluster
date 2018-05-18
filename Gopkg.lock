@@ -2,10 +2,10 @@
 
 
 [[projects]]
-  branch = "feature/consumer-groups"
+  branch = "feature/higher-level-consumer-groups"
   name = "github.com/Shopify/sarama"
   packages = ["."]
-  revision = "e3e6f6791f233561d21982982f032726ec227668"
+  revision = "c78a2cddcc5c13a4c21c32d00da8415ce27a2bb4"
   source = "github.com/bsm/sarama-1"
 
 [[projects]]
@@ -149,6 +149,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4202c1d38815e216c78b2091e313b110f12fb966590a13f1fc2577c9d828ad31"
+  inputs-digest = "a0666392a163811d3a48fb0d0a0107357981142feacb15f6c6f1a5bc1b8648fe"
   solver-name = "gps-cdcl"
   solver-version = 1
