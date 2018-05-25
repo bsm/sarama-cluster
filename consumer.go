@@ -469,7 +469,8 @@ func (c *Consumer) cmLoop(stopped <-chan none) {
 
 func (c *Consumer) rebalanceError(err error, n *Notification) {
 	if n != nil {
-		n.Type = RebalanceError
+		// Get a copy of the notification that represents the notification's error state
+		n = n.error()
 		c.handleNotification(n)
 	}
 
