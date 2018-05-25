@@ -68,6 +68,25 @@ func (n *Notification) success(current map[string][]int32) *Notification {
 	return o
 }
 
+func (n *Notification) error() *Notification {
+	o := &Notification{
+		Type:     RebalanceError,
+		Claimed:  make(map[string][]int32),
+		Released: make(map[string][]int32),
+		Current:  make(map[string][]int32),
+	}
+	for topic, partitions := range n.Claimed {
+		o.Claimed[topic] = append(make([]int32, 0, len(partitions)), partitions...)
+	}
+	for topic, partitions := range n.Released {
+		o.Released[topic] = append(make([]int32, 0, len(partitions)), partitions...)
+	}
+	for topic, partitions := range n.Current {
+		o.Current[topic] = append(make([]int32, 0, len(partitions)), partitions...)
+	}
+	return o
+}
+
 // --------------------------------------------------------------------
 
 type topicInfo struct {
