@@ -84,10 +84,6 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 		return nil, err
 	}
 
-	if handler == nil {
-		handler = noopHandler
-	}
-
 	c := &consumer{
 		groupID:   groupID,
 		topics:    topics,
@@ -202,7 +198,6 @@ func (c *consumer) nextSession(topics []string) error {
 		select {
 		case <-c.closing:
 		case <-c.rebalance:
-		case <-sess.Done():
 		}
 	}()
 

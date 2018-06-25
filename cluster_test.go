@@ -27,6 +27,15 @@ func newConsumerProcess(clientID, groupID string, topics []string, handler clust
 	config.Version = sarama.V1_0_0_0
 	config.Consumer.Return.Errors = true
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+
+	if handler == nil {
+		handler = cluster.HandlerFunc(func(c cluster.PartitionConsumer) error {
+			for range c.Messages() {
+			}
+			return nil
+		})
+	}
+
 	return cluster.NewConsumer(testKafkaBrokers, groupID, topics, config, handler)
 }
 
