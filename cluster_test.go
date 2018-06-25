@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	testKafkaRoot  = "kafka_2.12-1.0.0"
+	testKafkaRoot  = "kafka_2.12-1.1.0"
 	testKafkaAddrs = []string{"127.0.0.1:29092"}
 	testTopics     = []string{"topic-a", "topic-b"}
 
