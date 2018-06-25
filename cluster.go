@@ -4,11 +4,6 @@ import "github.com/Shopify/sarama"
 
 type none struct{}
 
-var noopHandler = HandlerFunc(func(c PartitionConsumer) error {
-	<-c.Done()
-	return nil
-})
-
 // --------------------------------------------------------------------
 
 // Handler instances are able to consume from PartitionConsumer instances.
@@ -39,9 +34,6 @@ type Claim struct {
 type PartitionConsumer interface {
 	sarama.ConsumerGroupClaim
 
-	// Done exposes a done channel, see sarama.ConsumerGroupSession.Done() for
-	// more details.
-	Done() <-chan struct{}
 	// MarkMessage marks a message as consumed.
 	MarkMessage(msg *sarama.ConsumerMessage, metadata string)
 }
@@ -54,5 +46,3 @@ type partitionConsumer struct {
 func (pc *partitionConsumer) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {
 	pc.sess.MarkMessage(msg, metadata)
 }
-
-func (pc *partitionConsumer) Done() <-chan struct{} { return pc.sess.Done() }

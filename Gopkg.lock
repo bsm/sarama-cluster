@@ -5,7 +5,7 @@
   branch = "feature/higher-level-consumer-groups"
   name = "github.com/Shopify/sarama"
   packages = ["."]
-  revision = "c78a2cddcc5c13a4c21c32d00da8415ce27a2bb4"
+  revision = "e340cada514681ec54f1a0545b011d3d854394af"
   source = "github.com/bsm/sarama-1"
 
 [[projects]]
@@ -95,7 +95,7 @@
   branch = "master"
   name = "github.com/rcrowley/go-metrics"
   packages = ["."]
-  revision = "d932a24a8ccb8fcadc993e5c6c58f93dac168294"
+  revision = "e2704e165165ec55d062f5919b4b29494e9fa790"
 
 [[projects]]
   branch = "master"
@@ -105,13 +105,13 @@
     "html/atom",
     "html/charset"
   ]
-  revision = "5f9ae10d9af5b1c89ae6904293b14b064d4ada23"
+  revision = "afe8f62b1d6bbd81f31868121a50b06d8188e1f9"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "cbbc999da32df943dac6cd71eb3ee39e1d7838b9"
+  revision = "63fc586f45fe72d95d5240a5d5eb95e6503907d3"
 
 [[projects]]
   name = "golang.org/x/text"
