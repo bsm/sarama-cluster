@@ -23,7 +23,10 @@ scenario.up:
 scenario.rm:
 	docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml rm -f
 
-.PHONY: scenario.up scenario.rm
+scenario.down:
+        docker-compose -f testdata/docker-compose-${KAFKA_VERSION}.yml down
+
+.PHONY: scenario.up scenario.rm scenario.down
 
 doc: README.md
 
