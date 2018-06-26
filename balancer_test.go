@@ -33,6 +33,27 @@ var _ = Describe("Notification", func() {
 		}))
 	})
 
+	It("should copy on error", func() {
+		n := newNotification(map[string][]int32{
+			"a": {1, 2, 3},
+			"b": {4, 5},
+			"c": {1, 2},
+		})
+		o := n.error()
+
+		Expect(n).To(Equal(&Notification{
+			Type:    RebalanceStart,
+			Current: map[string][]int32{"a": {1, 2, 3}, "b": {4, 5}, "c": {1, 2}},
+		}))
+
+		Expect(o).To(Equal(&Notification{
+			Type:     RebalanceError,
+			Claimed:  map[string][]int32{},
+			Released: map[string][]int32{},
+			Current:  map[string][]int32{"a": {1, 2, 3}, "b": {4, 5}, "c": {1, 2}},
+		}))
+	})
+
 })
 
 var _ = Describe("balancer", func() {
