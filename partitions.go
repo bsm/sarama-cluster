@@ -23,7 +23,11 @@ type PartitionConsumer interface {
 	// InitialOffset returns the offset used for creating the PartitionConsumer instance.
 	// The returned offset can be a literal offset, or OffsetNewest, or OffsetOldest
 	InitialOffset() int64
-  
+
+	// InitialOffsetMetadata returns the offset metadata of the last
+	// committed offset or empty string if there is none.
+	InitialOffsetMetadata() string
+
 	// MarkOffset marks the offset of a message as preocessed.
 	MarkOffset(offset int64, metadata string)
 
@@ -37,9 +41,10 @@ type partitionConsumer struct {
 	state partitionState
 	mu    sync.Mutex
 
-	topic         string
-	partition     int32
-	initialOffset int64
+	topic                 string
+	partition             int32
+	initialOffset         int64
+	initialOffsetMetadata string
 
 	closeOnce sync.Once
 	closeErr  error
@@ -65,9 +70,10 @@ func newPartitionConsumer(manager sarama.Consumer, topic string, partition int32
 		PartitionConsumer: pcm,
 		state:             partitionState{Info: info},
 
-		topic:         topic,
-		partition:     partition,
-		initialOffset: offset,
+		topic:                 topic,
+		partition:             partition,
+		initialOffset:         offset,
+		initialOffsetMetadata: info.Metadata,
 
 		dying: make(chan none),
 		dead:  make(chan none),
@@ -82,6 +88,9 @@ func (c *partitionConsumer) Partition() int32 { return c.partition }
 
 // InitialOffset implements PartitionConsumer
 func (c *partitionConsumer) InitialOffset() int64 { return c.initialOffset }
+
+// InitialOffsetMetadata implements PartitionConsumer
+func (c *partitionConsumer) InitialOffsetMetadata() string { return c.initialOffsetMetadata }
 
 // AsyncClose implements PartitionConsumer
 func (c *partitionConsumer) AsyncClose() {
