@@ -102,26 +102,7 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 	}()
 
 	// start handler loop
-	go c.mainLoop(&handlerWrapper{
-		ConsumerGroupHandler: handler,
-		preSetup: func(s sarama.ConsumerGroupSession) {
-			// listen for rebalance, close the session
-			go func() {
-				defer s.Cancel()
-
-				select {
-				case <-c.closing:
-				case <-c.rebalance:
-				}
-			}()
-
-			// issue rebalance notification about new claims
-			select {
-			case c.claims <- &Claim{Current: s.Claims()}:
-			default:
-			}
-		},
-	})
+	go c.mainLoop(handler)
 
 	return c, nil
 }
@@ -141,6 +122,7 @@ func (c *consumer) Topics() []string {
 
 	return topics
 }
+
 func (c *consumer) SetTopics(topics ...string) {
 	c.topicsMu.Lock()
 	c.topics = topics
@@ -183,7 +165,7 @@ func (c *consumer) Close() error {
 	return err
 }
 
-func (c *consumer) mainLoop(handler *handlerWrapper) {
+func (c *consumer) mainLoop(handler sarama.ConsumerGroupHandler) {
 	defer close(c.closed)
 
 	for {
@@ -207,11 +189,40 @@ func (c *consumer) mainLoop(handler *handlerWrapper) {
 			continue
 		}
 
-		if err := c.group.Consume(topics, handler); err != nil {
+		if err := c.consume(topics, handler); err != nil {
 			c.handleError(err)
 			c.backoff()
 		}
 	}
+}
+
+func (c *consumer) consume(topics []string, handler sarama.ConsumerGroupHandler) error {
+	done := make(chan none)
+	defer close(done)
+
+	setup := func(s sarama.ConsumerGroupSession) {
+		// listen for exit or rebalance
+		go func() {
+			defer s.Cancel()
+
+			select {
+			case <-c.closing:
+			case <-c.rebalance:
+			case <-done:
+			}
+		}()
+
+		// issue rebalance notification about new claims
+		select {
+		case c.claims <- &Claim{Current: s.Claims()}:
+		default:
+		}
+	}
+
+	return c.group.Consume(topics, &handlerWrapper{
+		ConsumerGroupHandler: handler,
+		preSetup:             setup,
+	})
 }
 
 func (c *consumer) handleError(err error) {

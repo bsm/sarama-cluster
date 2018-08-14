@@ -121,21 +121,21 @@ var _ = Describe("Consumer", func() {
 		m1, err := newConsumerProcess("M1", groupID, testTopics, handler)
 		Expect(err).NotTo(HaveOccurred())
 		defer m1.Close()
-		withinTenSec(handler.NumSessions).Should(Equal(8))
+		Eventually(handler.NumSessions, "5s").Should(Equal(8))
 
 		// start M2 & wait
 		m2, err := newConsumer("M2", groupID, testTopics...)
 		Expect(err).NotTo(HaveOccurred())
 		defer m2.Close()
-		withinTenSec(handler.NumSessions).Should(Equal(4))
+		Eventually(handler.NumSessions, "5s").Should(Equal(4))
 
 		// Close M2, wait for M1 to take over
 		Expect(m2.Close()).To(Succeed())
-		withinTenSec(handler.NumSessions).Should(Equal(8))
+		Eventually(handler.NumSessions, "5s").Should(Equal(8))
 
 		// Close M1
 		Expect(m1.Close()).To(Succeed())
-		withinTenSec(handler.NumSessions).Should(Equal(0))
+		Eventually(handler.NumSessions, "5s").Should(Equal(0))
 	})
 
 	It("should allow change topics", func() {
