@@ -23,7 +23,7 @@ services:
       ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
 
   kafka1:
-    image: wurstmeister/kafka:1.0.1
+    image: wurstmeister/kafka:2.11-1.1.1
     restart: always
     environment:
       - KAFKA_BROKER_ID=1
@@ -37,7 +37,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on: [zoo1, zoo2, zoo3, kafka2, kafka3]
   kafka2:
-    image: wurstmeister/kafka:1.0.1
+    image: wurstmeister/kafka:2.11-1.1.1
     restart: always
     environment:
       - KAFKA_BROKER_ID=2
@@ -50,7 +50,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on: [zoo1, zoo2, zoo3]
   kafka3:
-    image: wurstmeister/kafka:1.0.1
+    image: wurstmeister/kafka:2.11-1.1.1
     restart: always
     environment:
       - KAFKA_BROKER_ID=3

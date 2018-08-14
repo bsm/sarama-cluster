@@ -1,5 +1,5 @@
 PKG=$(shell go list ./... | grep -v vendor)
-KAFKA_VERSION=1.0.1
+KAFKA_VERSION=2.0.x
 
 default: vet test
 
