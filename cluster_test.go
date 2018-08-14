@@ -43,12 +43,12 @@ func newConsumer(clientID, groupID string, topics ...string) (cluster.Consumer, 
 	return newConsumerProcess(clientID, groupID, topics, nil)
 }
 
-func withinFiveSec(v interface{}) GomegaAsyncAssertion {
-	return Eventually(v, "5s", "50ms")
+func withinTenSec(v interface{}) GomegaAsyncAssertion {
+	return Eventually(v, "10s", "50ms")
 }
 
 func claimsOf(c cluster.Consumer) GomegaAsyncAssertion {
-	return withinFiveSec(func() map[string][]int32 {
+	return withinTenSec(func() map[string][]int32 {
 		select {
 		case claim := <-c.Claims():
 			if claim != nil {
