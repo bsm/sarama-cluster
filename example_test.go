@@ -22,10 +22,10 @@ func Example() {
 	config.Consumer.Return.Errors = true
 
 	// define a (thread-safe) handler
-	handler := cluster.HandlerFunc(func(pc cluster.PartitionConsumer) error {
-		for msg := range pc.Messages() {
+	handler := cluster.HandlerFunc(func(s sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
+		for msg := range c.Messages() {
 			fmt.Fprintf(os.Stdout, "%s-%d:%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-			pc.MarkMessage(msg, "custom metadata") // mark message as processed
+			s.MarkMessage(msg, "custom metadata") // mark message as processed
 		}
 		return nil
 	})

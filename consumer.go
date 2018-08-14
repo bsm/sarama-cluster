@@ -29,11 +29,8 @@ type Consumer interface {
 type consumer struct {
 	client    sarama.Client
 	ownClient bool
-	groupID   string
 	config    *sarama.Config
-	handler   Handler
-
-	group sarama.ConsumerGroup
+	group     sarama.ConsumerGroup
 
 	topics   []string
 	topicsMu sync.RWMutex
@@ -48,7 +45,7 @@ type consumer struct {
 }
 
 // NewConsumer starts a new consumer.
-func NewConsumer(addrs []string, groupID string, topics []string, config *sarama.Config, handler Handler) (Consumer, error) {
+func NewConsumer(addrs []string, groupID string, topics []string, config *sarama.Config, handler sarama.ConsumerGroupHandler) (Consumer, error) {
 	if config == nil {
 		config = sarama.NewConfig()
 		config.Version = sarama.V0_10_2_0
@@ -73,7 +70,7 @@ func NewConsumer(addrs []string, groupID string, topics []string, config *sarama
 // they can only be re-used which requires the user to call Close() on the first consumer
 // before using this method again to initialize another one. Attempts to use a client with
 // more than one consumer at a time will return errors.
-func NewConsumerFromClient(client sarama.Client, groupID string, topics []string, handler Handler) (Consumer, error) {
+func NewConsumerFromClient(client sarama.Client, groupID string, topics []string, handler sarama.ConsumerGroupHandler) (Consumer, error) {
 	config := client.Config()
 	if !config.Version.IsAtLeast(sarama.V0_10_2_0) {
 		return nil, sarama.ConfigurationError("consumer groups require Version to be >= V0_10_2_0")
@@ -84,20 +81,48 @@ func NewConsumerFromClient(client sarama.Client, groupID string, topics []string
 		return nil, err
 	}
 
+	// init consumer
 	c := &consumer{
-		groupID:   groupID,
 		topics:    topics,
 		client:    client,
 		config:    config,
 		group:     group,
-		handler:   handler,
 		claims:    make(chan *Claim, config.ChannelBufferSize),
 		errors:    make(chan error, config.ChannelBufferSize),
 		rebalance: make(chan none, 1),
 		closing:   make(chan none, 1),
 		closed:    make(chan none, 1),
 	}
-	go c.mainLoop()
+
+	// propagate errors
+	go func() {
+		for err := range group.Errors() {
+			c.handleError(err)
+		}
+	}()
+
+	// start handler loop
+	go c.mainLoop(&handlerWrapper{
+		ConsumerGroupHandler: handler,
+		preSetup: func(s sarama.ConsumerGroupSession) {
+			// listen for rebalance, close the session
+			go func() {
+				defer s.Cancel()
+
+				select {
+				case <-c.closing:
+				case <-c.rebalance:
+				}
+			}()
+
+			// issue rebalance notification about new claims
+			select {
+			case c.claims <- &Claim{Current: s.Claims()}:
+			default:
+			}
+		},
+	})
+
 	return c, nil
 }
 
@@ -116,6 +141,17 @@ func (c *consumer) Topics() []string {
 
 	return topics
 }
+func (c *consumer) SetTopics(topics ...string) {
+	c.topicsMu.Lock()
+	c.topics = topics
+	c.topicsMu.Unlock()
+
+	// trigger a rebalance
+	select {
+	case c.rebalance <- none{}:
+	default:
+	}
+}
 
 func (c *consumer) Close() error {
 	var err error
@@ -133,26 +169,21 @@ func (c *consumer) Close() error {
 			}
 		}
 
-		// close channels
-		close(c.claims)
-		close(c.errors)
+		// close + drain channels
+		go func() {
+			close(c.claims)
+			close(c.errors)
+		}()
+		for range c.claims {
+		}
+		for e := range c.errors {
+			err = e
+		}
 	})
 	return err
 }
 
-func (c *consumer) SetTopics(topics ...string) {
-	c.topicsMu.Lock()
-	c.topics = topics
-	c.topicsMu.Unlock()
-
-	// trigger a rebalance
-	select {
-	case c.rebalance <- none{}:
-	default:
-	}
-}
-
-func (c *consumer) mainLoop() {
+func (c *consumer) mainLoop(handler *handlerWrapper) {
 	defer close(c.closed)
 
 	for {
@@ -176,61 +207,18 @@ func (c *consumer) mainLoop() {
 			continue
 		}
 
-		if err := c.nextSession(topics); err != nil {
+		if err := c.group.Consume(topics, handler); err != nil {
 			c.handleError(err)
 			c.backoff()
 		}
 	}
 }
 
-func (c *consumer) nextSession(topics []string) error {
-	// start a new session
-	sess, err := c.group.Subscribe(topics)
-	if err != nil {
-		return err
-	}
-	defer sess.Close()
-
-	// listen for rebalance, close the session
-	go func() {
-		defer sess.Cancel()
-
-		select {
-		case <-c.closing:
-		case <-c.rebalance:
-		}
-	}()
-
-	// handle errors
-	go func() {
-		for err := range sess.Errors() {
-			c.handleError(err)
-		}
-	}()
-
-	// issue rebalance notification about new claims
-	select {
-	case c.claims <- &Claim{Current: sess.Claims()}:
-	default:
-	}
-
-	// start consumer loop, blocking
-	sess.Consume(sarama.ConsumerGroupHandlerFunc(func(claim sarama.ConsumerGroupClaim) error {
-		return c.handler.ProcessPartition(&partitionConsumer{
-			ConsumerGroupClaim: claim,
-			sess:               sess,
-		})
-	}))
-
-	// close session explicitly
-	return sess.Close()
-}
-
 func (c *consumer) handleError(err error) {
 	if c.config.Consumer.Return.Errors {
 		select {
-		case c.errors <- err:
 		case <-c.closing:
+		case c.errors <- err:
 		}
 	} else {
 		sarama.Logger.Println(err)

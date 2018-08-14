@@ -6,19 +6,29 @@ type none struct{}
 
 // --------------------------------------------------------------------
 
-// Handler instances are able to consume from PartitionConsumer instances.
-// PLEASE NOTE that handlers are likely be called from several goroutines concurrently.
-// Ensure that all state is safely protected against race conditions.
-type Handler interface {
-	// ProcessPartition must start a consumer loop over Messages().
-	ProcessPartition(PartitionConsumer) error
+type handlerWrapper struct {
+	sarama.ConsumerGroupHandler
+	preSetup func(sarama.ConsumerGroupSession)
 }
 
-// HandlerFunc is a Handler function shortcut.
-type HandlerFunc func(PartitionConsumer) error
+func (w *handlerWrapper) Setup(s sarama.ConsumerGroupSession) error {
+	w.preSetup(s)
+	return w.ConsumerGroupHandler.Setup(s)
+}
 
-// ProcessLoop implements the Handler interface.
-func (f HandlerFunc) ProcessPartition(c PartitionConsumer) error { return f(c) }
+// HandlerFunc is a sarama.ConsumerGroupHandler function shortcut.
+type HandlerFunc func(sarama.ConsumerGroupSession, sarama.ConsumerGroupClaim) error
+
+// ConsumeClaim implements sarama.ConsumerGroupHandler
+func (f HandlerFunc) ConsumeClaim(s sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
+	return f(s, c)
+}
+
+// Setup implements sarama.ConsumerGroupHandler
+func (f HandlerFunc) Setup(_ sarama.ConsumerGroupSession) error { return nil }
+
+// Cleanup implements sarama.ConsumerGroupHandler
+func (f HandlerFunc) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
 
 // --------------------------------------------------------------------
 
@@ -27,22 +37,4 @@ func (f HandlerFunc) ProcessPartition(c PartitionConsumer) error { return f(c) }
 type Claim struct {
 	// Current lists the currently claimed topics and partitions
 	Current map[string][]int32
-}
-
-// --------------------------------------------------------------------
-
-type PartitionConsumer interface {
-	sarama.ConsumerGroupClaim
-
-	// MarkMessage marks a message as consumed.
-	MarkMessage(msg *sarama.ConsumerMessage, metadata string)
-}
-
-type partitionConsumer struct {
-	sarama.ConsumerGroupClaim
-	sess sarama.ConsumerGroupSession
-}
-
-func (pc *partitionConsumer) MarkMessage(msg *sarama.ConsumerMessage, metadata string) {
-	pc.sess.MarkMessage(msg, metadata)
 }

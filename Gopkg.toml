@@ -24,3 +24,7 @@
   name = "github.com/Shopify/sarama"
   source = "github.com/bsm/sarama-1"
   branch = "feature/higher-level-consumer-groups"
+
+[[override]]
+  name = "gopkg.in/fsnotify.v1"
+  source = "https://github.com/fsnotify/fsnotify.git"

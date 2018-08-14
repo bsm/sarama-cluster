@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -199,8 +200,8 @@ var _ = Describe("Consumer", func() {
 		consume := func(clientID string, max int32) {
 			defer GinkgoRecover()
 
-			member, err := newConsumerProcess(clientID, groupID, testTopics, cluster.HandlerFunc(func(pc cluster.PartitionConsumer) error {
-				for msg := range pc.Messages() {
+			member, err := newConsumerProcess(clientID, groupID, testTopics, cluster.HandlerFunc(func(s sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
+				for msg := range c.Messages() {
 					if atomic.AddInt32(&max, -1) < 0 {
 						break
 					}
@@ -212,7 +213,7 @@ var _ = Describe("Consumer", func() {
 					accMu.Lock()
 					acc <- &testConsumerMessage{*msg, clientID}
 					accMu.Unlock()
-					pc.MarkMessage(msg, "")
+					s.MarkMessage(msg, "")
 				}
 				return nil
 			}))
