@@ -21,7 +21,7 @@ func newTestConsumerGroupID() string {
 	return fmt.Sprintf("test_sarama_cluster_%d", time.Now().UnixNano())
 }
 
-func newConsumerProcess(clientID, groupID string, topics []string, handler cluster.Handler) (cluster.Consumer, error) {
+func newConsumerProcess(clientID, groupID string, topics []string, handler sarama.ConsumerGroupHandler) (cluster.Consumer, error) {
 	config := sarama.NewConfig()
 	config.ClientID = clientID
 	config.Version = sarama.V1_0_0_0
@@ -29,7 +29,7 @@ func newConsumerProcess(clientID, groupID string, topics []string, handler clust
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 
 	if handler == nil {
-		handler = cluster.HandlerFunc(func(c cluster.PartitionConsumer) error {
+		handler = cluster.HandlerFunc(func(_ sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
 			for range c.Messages() {
 			}
 			return nil
@@ -118,12 +118,14 @@ type testConsumerMessage struct {
 
 type countingHandler struct{ sessions, messages int32 }
 
-func (h *countingHandler) ProcessPartition(pc cluster.PartitionConsumer) error {
+func (h *countingHandler) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
+func (h *countingHandler) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
+func (h *countingHandler) ConsumeClaim(s sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
 	atomic.AddInt32(&h.sessions, 1)
 	defer atomic.AddInt32(&h.sessions, -1)
 
 	// start seemingly endless loop
-	for range pc.Messages() {
+	for range c.Messages() {
 		atomic.AddInt32(&h.messages, 1)
 	}
 	return nil

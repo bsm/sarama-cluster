@@ -81,10 +81,10 @@ func main() {
 	<-shutdown
 }
 
-func handler(pc cluster.PartitionConsumer) error {
-	for msg := range pc.Messages() {
+func handler(s sarama.ConsumerGroupSession, c sarama.ConsumerGroupClaim) error {
+	for msg := range c.Messages() {
 		fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Value)
-		pc.MarkMessage(msg, "")
+		s.MarkMessage(msg, "")
 	}
 	return nil
 }
