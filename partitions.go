@@ -86,7 +86,7 @@ func (c *partitionConsumer) InitialOffset() int64 { return c.initialOffset }
 // AsyncClose implements PartitionConsumer
 func (c *partitionConsumer) AsyncClose() {
 	c.closeOnce.Do(func() {
-		c.PartitionConsumer.AsyncClose()
+		c.closeErr = c.PartitionConsumer.Close()
 		close(c.dying)
 	})
 }

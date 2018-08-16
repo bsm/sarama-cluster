@@ -295,7 +295,7 @@ func (c *Consumer) Close() (err error) {
 		for range c.errors {
 		}
 		for p := range c.partitions {
-			p.AsyncClose()
+			_ = p.Close()
 		}
 		for range c.notifications {
 		}
