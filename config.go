@@ -36,7 +36,7 @@ type Config struct {
 
 		Offsets struct {
 			Retry struct {
-				// The numer retries when committing offsets (defaults to 3).
+				// The number retries when committing offsets (defaults to 3).
 				Max int
 			}
 			Synchronization struct {
@@ -54,7 +54,7 @@ type Config struct {
 
 		Heartbeat struct {
 			// Interval between each heartbeat (defaults to 3s). It should be no more
-			// than 1/3rd of the Group.Session.Timout setting
+			// than 1/3rd of the Group.Session.Timeout setting
 			Interval time.Duration
 		}
 
