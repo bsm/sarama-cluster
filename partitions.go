@@ -98,28 +98,12 @@ func (c *partitionConsumer) Close() error {
 	return c.closeErr
 }
 
-func (c *partitionConsumer) waitFor(stopper <-chan none, errors chan<- error) {
-	defer close(c.dead)
-
-	for {
-		select {
-		case err, ok := <-c.Errors():
-			if !ok {
-				return
-			}
-			select {
-			case errors <- err:
-			case <-stopper:
-				return
-			case <-c.dying:
-				return
-			}
-		case <-stopper:
-			return
-		case <-c.dying:
-			return
-		}
+func (c *partitionConsumer) waitFor(stopper <-chan none) {
+	select {
+	case <-stopper:
+	case <-c.dying:
 	}
+	close(c.dead)
 }
 
 func (c *partitionConsumer) multiplex(stopper <-chan none, messages chan<- *sarama.ConsumerMessage, errors chan<- error) {
