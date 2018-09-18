@@ -824,7 +824,7 @@ func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32,
 	// Start partition consumer goroutine
 	tomb.Go(func(stopper <-chan none) {
 		if c.client.config.Group.Mode == ConsumerModePartitions {
-			pc.waitFor(stopper, c.errors)
+			pc.waitFor(stopper)
 		} else {
 			pc.multiplex(stopper, c.messages, c.errors)
 		}
