@@ -36,6 +36,8 @@ type Consumer struct {
 	partitions    chan PartitionConsumer
 	notifications chan *Notification
 
+	customOffsets map[string]map[int32]offsetInfo
+
 	commitMu sync.Mutex
 }
 
@@ -87,6 +89,8 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		partitions:    make(chan PartitionConsumer, 1),
 		notifications: make(chan *Notification),
+
+		customOffsets: make(map[string]map[int32]offsetInfo),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
 		client.release()
@@ -142,6 +146,8 @@ func (c *Consumer) HighWaterMarks() map[string]map[int32]int64 { return c.consum
 func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 	if sub := c.subs.Fetch(msg.Topic, msg.Partition); sub != nil {
 		sub.MarkOffset(msg.Offset, metadata)
+	} else {
+		c.markCustomOffset(msg.Topic, msg.Partition, msg.Offset, metadata)
 	}
 }
 
@@ -150,6 +156,18 @@ func (c *Consumer) MarkOffset(msg *sarama.ConsumerMessage, metadata string) {
 func (c *Consumer) MarkPartitionOffset(topic string, partition int32, offset int64, metadata string) {
 	if sub := c.subs.Fetch(topic, partition); sub != nil {
 		sub.MarkOffset(offset, metadata)
+	} else {
+		c.markCustomOffset(topic, partition, offset, metadata)
+	}
+}
+
+func (c *Consumer) markCustomOffset(topic string, partition int32, offset int64, metadata string) {
+	if _, ok := c.customOffsets[topic]; !ok {
+		c.customOffsets[topic] = make(map[int32]offsetInfo)
+	}
+	c.customOffsets[topic][partition] = offsetInfo {
+		Offset   : offset,
+		Metadata : metadata,
 	}
 }
 
@@ -162,6 +180,8 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 	for tp, info := range s.offsets {
 		if sub := c.subs.Fetch(tp.Topic, tp.Partition); sub != nil {
 			sub.MarkOffset(info.Offset, info.Metadata)
+		} else {
+			c.markCustomOffset(tp.Topic, tp.Partition, info.Offset, info.Metadata)
 		}
 		delete(s.offsets, tp)
 	}
@@ -176,6 +196,8 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 func (c *Consumer) ResetOffset(msg *sarama.ConsumerMessage, metadata string) {
 	if sub := c.subs.Fetch(msg.Topic, msg.Partition); sub != nil {
 		sub.ResetOffset(msg.Offset, metadata)
+	} else {
+		c.markCustomOffset(msg.Topic, msg.Partition, msg.Offset, metadata)
 	}
 }
 
@@ -185,6 +207,8 @@ func (c *Consumer) ResetPartitionOffset(topic string, partition int32, offset in
 	sub := c.subs.Fetch(topic, partition)
 	if sub != nil {
 		sub.ResetOffset(offset, metadata)
+	} else {
+		c.markCustomOffset(topic, partition, offset, metadata)
 	}
 }
 
@@ -609,6 +633,11 @@ func (c *Consumer) subscribe(tomb *loopTomb, subs map[string][]int32) error {
 			wg.Add(1)
 
 			info := offsets[topic][partition]
+			if item, ok := c.customOffsets[topic]; ok {
+				if i, ok := item[partition]; ok {
+					info = i
+				}
+			}
 			go func(topic string, partition int32) {
 				if e := c.createConsumer(tomb, topic, partition, info); e != nil {
 					mu.Lock()
