@@ -350,7 +350,7 @@ func (c *Consumer) nextTick() {
 
 	// Issue rebalance start notification
 	if c.client.config.Group.Return.Notifications {
-		c.handleNotification(newNotification(c.subs.Info())
+		c.handleNotification(newNotification(c.subs.Info()))
 	}
 
 	// Rebalance, fetch new subscriptions
