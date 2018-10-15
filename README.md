@@ -133,6 +133,63 @@ func main() {
 }
 ```
 
+if you want to receive message from `Producer created by sarama`, you should init your consumer like this:
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/Shopify/sarama"
+    "github.com/bsm/sarama-cluster"
+)
+
+func main() {
+    config := cluster.NewConfig()
+    config.Consumer.Return.Errors = true
+
+    config.Producer.Return.Successes = true
+    config.Producer.Return.Errors = true
+
+    config.Group.Return.Notifications = true
+    brokers := []string{"127.0.0.1:9092"}
+    topic := "test"
+
+    topics := []string{topic}
+    consumer, err := cluster.NewConsumer(brokers, "test-consumer-group", topics, config)
+    if err != nil {
+        panic(err)
+    }
+
+    // consumer really init successful when the notifications is received
+    ntf, ok := <-consumer.Notifications()
+    if !ok {
+        panic("notification is close before consumer init")
+    }
+    fmt.Printf("Rebalanced: %+v\n", ntf)
+    defer consumer.Close()
+
+    producer, err := sarama.NewAsyncProducer(brokers, &config.Config)
+    if err != nil {
+        panic(err)
+    }
+    defer producer.Close()
+
+    var testData = []string{"The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"}
+    for _, word := range testData {
+       producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}
+       <-producer.Successes()
+       msg := <-consumer.Messages()
+       println(string(msg.Value))
+    }
+}
+```
+
+kafka will return a notifications via `consumer.Notifications()` when consumer init successfully in kafka. you should wait this notifications.
+
+if you don't wait the notifications, the msg inputted by `producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}` maybe regard as an old msg before your new consumer, and new consumer will never get this msg unless you set `config.Consumer.Offsets.Initial` to `sarama.OffsetOldest`, but it will get all old msg.
+
 ## Running tests
 
 You need to install Ginkgo & Gomega to run tests. Please see
