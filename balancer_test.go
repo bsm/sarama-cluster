@@ -48,7 +48,7 @@ var _ = Describe("balancer", func() {
 		}
 
 		var err error
-		subject, err = newBalancerFromMeta(client, map[string]sarama.ConsumerGroupMemberMetadata{
+		subject, err = newBalancerFromMeta(client, StrategyRange, map[string]sarama.ConsumerGroupMemberMetadata{
 			"b": {Topics: []string{"three", "one"}},
 			"a": {Topics: []string{"one", "two"}},
 		})
@@ -60,12 +60,13 @@ var _ = Describe("balancer", func() {
 	})
 
 	It("should perform", func() {
-		Expect(subject.Perform(StrategyRange)).To(Equal(map[string]map[string][]int32{
+		Expect(subject.Perform()).To(Equal(map[string]map[string][]int32{
 			"a": {"one": {0, 1}, "two": {0, 1, 2}},
 			"b": {"one": {2, 3}, "three": {0, 1}},
 		}))
 
-		Expect(subject.Perform(StrategyRoundRobin)).To(Equal(map[string]map[string][]int32{
+		subject.strategy = StrategyRoundRobin
+		Expect(subject.Perform()).To(Equal(map[string]map[string][]int32{
 			"a": {"one": {0, 2}, "two": {0, 1, 2}},
 			"b": {"one": {1, 3}, "three": {0, 1}},
 		}))
