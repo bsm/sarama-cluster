@@ -20,60 +20,60 @@ topics and partitions are all passed to the single channel:
 package main
 
 import (
-    "fmt"
-    "log"
-    "os"
-    "os/signal"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
 
-    cluster "github.com/bsm/sarama-cluster"
+	cluster "github.com/bsm/sarama-cluster"
 )
 
 func main() {
 
-    // init (custom) config, enable errors and notifications
-    config := cluster.NewConfig()
-    config.Consumer.Return.Errors = true
-    config.Group.Return.Notifications = true
+	// init (custom) config, enable errors and notifications
+	config := cluster.NewConfig()
+	config.Consumer.Return.Errors = true
+	config.Group.Return.Notifications = true
 
-    // init consumer
-    brokers := []string{"127.0.0.1:9092"}
-    topics := []string{"my_topic", "other_topic"}
-    consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
-    if err != nil {
-        panic(err)
-    }
-    defer consumer.Close()
+	// init consumer
+	brokers := []string{"127.0.0.1:9092"}
+	topics := []string{"my_topic", "other_topic"}
+	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+	if err != nil {
+		panic(err)
+	}
+	defer consumer.Close()
 
-    // trap SIGINT to trigger a shutdown.
-    signals := make(chan os.Signal, 1)
-    signal.Notify(signals, os.Interrupt)
+	// trap SIGINT to trigger a shutdown.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
 
-    // consume errors
-    go func() {
-        for err := range consumer.Errors() {
-            log.Printf("Error: %s\n", err.Error())
-        }
-    }()
+	// consume errors
+	go func() {
+		for err := range consumer.Errors() {
+			log.Printf("Error: %s\n", err.Error())
+		}
+	}()
 
-    // consume notifications
-    go func() {
-        for ntf := range consumer.Notifications() {
-            log.Printf("Rebalanced: %+v\n", ntf)
-        }
-    }()
+	// consume notifications
+	go func() {
+		for ntf := range consumer.Notifications() {
+			log.Printf("Rebalanced: %+v\n", ntf)
+		}
+	}()
 
-    // consume messages, watch signals
-    for {
-        select {
-        case msg, ok := <-consumer.Messages():
-            if ok {
-                fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-                consumer.MarkOffset(msg, "")    // mark message as processed
-            }
-        case <-signals:
-            return
-        }
-    }
+	// consume messages, watch signals
+	for {
+		select {
+		case msg, ok := <-consumer.Messages():
+			if ok {
+				fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+				consumer.MarkOffset(msg, "")	// mark message as processed
+			}
+		case <-signals:
+			return
+		}
+	}
 }
 ```
 
@@ -94,102 +94,106 @@ import (
 
 func main() {
 
-    // init (custom) config, set mode to ConsumerModePartitions
-    config := cluster.NewConfig()
-    config.Group.Mode = cluster.ConsumerModePartitions
+	// init (custom) config, set mode to ConsumerModePartitions
+	config := cluster.NewConfig()
+	config.Group.Mode = cluster.ConsumerModePartitions
 
-    // init consumer
-    brokers := []string{"127.0.0.1:9092"}
-    topics := []string{"my_topic", "other_topic"}
-    consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
-    if err != nil {
-        panic(err)
-    }
-    defer consumer.Close()
+	// init consumer
+	brokers := []string{"127.0.0.1:9092"}
+	topics := []string{"my_topic", "other_topic"}
+	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+	if err != nil {
+		panic(err)
+	}
+	defer consumer.Close()
 
-    // trap SIGINT to trigger a shutdown.
-    signals := make(chan os.Signal, 1)
-    signal.Notify(signals, os.Interrupt)
+	// trap SIGINT to trigger a shutdown.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
 
-    // consume partitions
-    for {
-        select {
-        case part, ok := <-consumer.Partitions():
-            if !ok {
-                return
-            }
+	// consume partitions
+	for {
+		select {
+		case part, ok := <-consumer.Partitions():
+			if !ok {
+				return
+			}
 
-            // start a separate goroutine to consume messages
-            go func(pc cluster.PartitionConsumer) {
-                for msg := range pc.Messages() {
-                    fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
-                    consumer.MarkOffset(msg, "")    // mark message as processed
-                }
-            }(part)
-        case <-signals:
-            return
-        }
-    }
+			// start a separate goroutine to consume messages
+			go func(pc cluster.PartitionConsumer) {
+				for msg := range pc.Messages() {
+					fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+					consumer.MarkOffset(msg, "")	// mark message as processed
+				}
+			}(part)
+		case <-signals:
+			return
+		}
+	}
 }
 ```
 
-if you want to receive message from `Producer created by sarama`, you should init your consumer like this:
+If you want to receive message from `sarama.Producer`, you should init your consumer like this:
 
 ```go
 package main
 
 import (
-    "fmt"
+    "log"
 
     "github.com/Shopify/sarama"
     "github.com/bsm/sarama-cluster"
 )
 
 func main() {
-    config := cluster.NewConfig()
+	config := cluster.NewConfig()
 
-    config.Group.Return.Notifications = true
-    brokers := []string{"127.0.0.1:9092"}
-    topic := "test"
+	config.Group.Return.Notifications = true
+	brokers := []string{"127.0.0.1:9092"}
+	topic := "my_topic"
 
-    topics := []string{topic}
-    consumer, err := cluster.NewConsumer(brokers, "test-consumer-group", topics, config)
-    if err != nil {
-        panic(err)
-    }
+	topics := []string{topic}
+	consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+	if err != nil {
+		panic(err)
+	}
 
-    // consumer really init successful when the notifications is received and `ntf.Type==cluster.RebalanceOK`
-    for{
-        ntf, ok := <-consumer.Notifications()
-        if !ok {
-            panic("notification is close before consumer init")
-        }
-        if ntf.Type == cluster.RebalanceOK{
-            break
-        } else if ntf.Type == cluster.RebalanceError{
-            panic("consumer init failed")
-        }
-    }
-    defer consumer.Close()
+	// consumer really init successful when the notifications is received and `ntf.Type==cluster.RebalanceOK`
+	for {
+		ntf, ok := <-consumer.Notifications()
+		if !ok {
+			panic("notification is close before consumer init")
+		}
+		if ntf.Type == cluster.RebalanceOK {
+			log.Printf("Rebalanced: %+v\n", ntf)
+			break
+		} else if ntf.Type == cluster.RebalanceError {
+			panic("consumer init failed")
+		}
+	}
+	defer consumer.Close()
 
-    producer, err := sarama.NewAsyncProducer(brokers, &config.Config)
-    if err != nil {
-        panic(err)
-    }
-    defer producer.Close()
+	producer, err := sarama.NewAsyncProducer(brokers, &config.Config)
+	if err != nil {
+		panic(err)
+	}
+	defer producer.Close()
 
-    var testData = []string{"The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"}
-    for _, word := range testData {
-       producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}
-       // get msg from kafka, and do something with msg.
-       msg := <-consumer.Messages()
-    }
+	var testData = []string{"The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"}
+	for _, word := range testData {
+		// input msg to kafka by saram.Producer
+		producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}
+
+		// get msg from kafka, and do something with msg.
+		msg := <-consumer.Messages()
+		log.Printf("%+v\n", msg)
+	}
 }
 ```
 
 kafka will return a notifications via `consumer.Notifications()` when consumer init successfully in kafka. you should wait this notifications and confirm field `Type` of it is equal to `cluster.RebalanceOK`.
 
-if you don't wait the notifications, the msg inputted by `producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}` maybe regard as an old msg before your new consumer, and new consumer will never get this msg unless you set `config.Consumer.Offsets.Initial` to `sarama.OffsetOldest`, but it will get all old msg.
+if you don't wait the notifications, the msg inputted by `producer.Input()` maybe regard as an old msg before your new consumer, and the new consumer will never get this msg unless you set `config.Consumer.Offsets.Initial` to `sarama.OffsetOldest`, but it will get all old msg from beginning.
 
 ## Running tests
 
@@ -198,7 +202,7 @@ http://onsi.github.io/ginkgo for more details.
 
 To run tests, call:
 
-    $ make test
+	$ make test
 
 ## Troubleshooting
 

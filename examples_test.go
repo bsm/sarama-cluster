@@ -7,7 +7,8 @@ import (
 	"os/signal"
 	"regexp"
 
-	cluster "github.com/bsm/sarama-cluster"
+	"github.com/bsm/sarama-cluster"
+    "github.com/Shopify/sarama"
 )
 
 // This example shows how to use the consumer to read messages
@@ -120,4 +121,51 @@ func ExampleConfig_whitelist() {
 	// consume messages
 	msg := <-consumer.Messages()
 	fmt.Fprintf(os.Stdout, "%s/%d/%d\t%s\t%s\n", msg.Topic, msg.Partition, msg.Offset, msg.Key, msg.Value)
+}
+
+// This example shows how to use the consumer to
+// consume msg from saram.Producer
+func ExampleConsumer_SaramProducer(){
+    config := cluster.NewConfig()
+
+    config.Group.Return.Notifications = true
+    brokers := []string{"127.0.0.1:9092"}
+    topic := "my_topic"
+
+    topics := []string{topic}
+    consumer, err := cluster.NewConsumer(brokers, "my-consumer-group", topics, config)
+    if err != nil {
+        panic(err)
+    }
+
+    // consumer really init successful when the notifications is received and `ntf.Type==cluster.RebalanceOK`
+    for {
+        ntf, ok := <-consumer.Notifications()
+        if !ok {
+            panic("notification is close before consumer init")
+        }
+        if ntf.Type == cluster.RebalanceOK {
+            log.Printf("Rebalanced: %+v\n", ntf)
+            break
+        } else if ntf.Type == cluster.RebalanceError {
+            panic("consumer init failed")
+        }
+    }
+    defer consumer.Close()
+
+    producer, err := sarama.NewAsyncProducer(brokers, &config.Config)
+    if err != nil {
+        panic(err)
+    }
+    defer producer.Close()
+
+    var testData = []string{"The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"}
+    for _, word := range testData {
+        // input msg to kafka by saram.Producer
+        producer.Input() <- &sarama.ProducerMessage{Topic: topic, Value: sarama.ByteEncoder(word)}
+
+        // get msg from kafka, and do something with msg.
+        msg := <-consumer.Messages()
+        log.Printf("%+v\n", msg)
+    }
 }

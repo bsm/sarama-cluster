@@ -49,6 +49,25 @@ import (
 func main() {{ "ExampleConsumer_Partitions" | code }}
 ```
 
+If you want to receive message from `sarama.Producer`, you should init your consumer like this:
+
+```go
+package main
+
+import (
+    "log"
+
+    "github.com/Shopify/sarama"
+    "github.com/bsm/sarama-cluster"
+)
+
+func main() {{ "ExampleConsumer_SaramProducer" | code }}
+```
+
+kafka will return a notifications via `consumer.Notifications()` when consumer init successfully in kafka. you should wait this notifications and confirm field `Type` of it is equal to `cluster.RebalanceOK`.
+
+if you don't wait the notifications, the msg inputted by `producer.Input()` maybe regard as an old msg before your new consumer, and the new consumer will never get this msg unless you set `config.Consumer.Offsets.Initial` to `sarama.OffsetOldest`, but it will get all old msg from beginning.
+
 ## Running tests
 
 You need to install Ginkgo & Gomega to run tests. Please see
