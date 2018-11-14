@@ -21,5 +21,9 @@ const (
 // may be returned through the consumer's Errors() channel
 type Error struct {
 	Ctx string
-	error
+	Err error
+}
+
+func (e Error) Error() string {
+	return e.Err.Error()
 }

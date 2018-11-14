@@ -407,7 +407,7 @@ func (c *Consumer) hbLoop(stopped <-chan none) {
 			case sarama.ErrNotCoordinatorForConsumer, sarama.ErrRebalanceInProgress:
 				return
 			default:
-				c.handleError(&Error{Ctx: "heartbeat", error: err})
+				c.handleError(&Error{Ctx: "heartbeat", Err: err})
 				return
 			}
 		case <-stopped:
@@ -428,7 +428,7 @@ func (c *Consumer) twLoop(stopped <-chan none) {
 		case <-ticker.C:
 			topics, err := c.client.Topics()
 			if err != nil {
-				c.handleError(&Error{Ctx: "topics", error: err})
+				c.handleError(&Error{Ctx: "topics", Err: err})
 				return
 			}
 
@@ -456,7 +456,7 @@ func (c *Consumer) cmLoop(stopped <-chan none) {
 		select {
 		case <-ticker.C:
 			if err := c.commitOffsetsWithRetry(c.client.config.Group.Offsets.Retry.Max); err != nil {
-				c.handleError(&Error{Ctx: "commit", error: err})
+				c.handleError(&Error{Ctx: "commit", Err: err})
 				return
 			}
 		case <-stopped:
@@ -476,7 +476,7 @@ func (c *Consumer) rebalanceError(err error, n *Notification) {
 	switch err {
 	case sarama.ErrRebalanceInProgress:
 	default:
-		c.handleError(&Error{Ctx: "rebalance", error: err})
+		c.handleError(&Error{Ctx: "rebalance", Err: err})
 	}
 
 	select {

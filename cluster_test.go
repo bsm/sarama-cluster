@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +32,14 @@ func init() {
 		testKafkaRoot = dir
 	}
 }
+
+var _ = Describe("Error", func() {
+
+	It("should return the error string of the underlying error", func() {
+		Expect(Error{Ctx: "test", Err: errors.New("test message")}.Error()).To(Equal("test message"))
+	})
+
+})
 
 var _ = Describe("offsetInfo", func() {
 
