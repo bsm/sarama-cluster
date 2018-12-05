@@ -281,6 +281,74 @@ var _ = Describe("Consumer", func() {
 		}, "30s", "100ms").Should(BeNumerically(">=", 2000))
 	})
 
+	It("should not lock on rebalance while dying", func() {
+		count := int32(0)
+		consume := func(consumerID string, closeChan, doneCh chan none) {
+			defer GinkgoRecover()
+
+			config := NewConfig()
+			config.Group.Mode = ConsumerModePartitions
+			config.Consumer.Offsets.Initial = sarama.OffsetOldest
+			config.Group.Offsets.Synchronization.DwellTime = time.Millisecond * 10000
+
+			cs, err := NewConsumer(testKafkaAddrs, "partitions-no-lock", testTopics, config)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				cs.Close()
+				close(doneCh)
+			}()
+
+			for {
+				select {
+				case pc := <-cs.Partitions():
+					go func(pc PartitionConsumer) {
+						defer func() {
+							pc.Close()
+						}()
+						for {
+							select {
+							case msg, ok := <-pc.Messages():
+								if !ok {
+									return
+								}
+								atomic.AddInt32(&count, 1)
+								cs.MarkOffset(msg, "")
+								cs.CommitOffsets()
+							case <-closeChan:
+								return
+							}
+						}
+					}(pc)
+				case <-closeChan:
+					return
+				}
+			}
+		}
+
+		chanA := make(chan none)
+		chanADone := make(chan none)
+		go consume("A", chanA, chanADone)
+		chanB := make(chan none)
+		chanBDone := make(chan none)
+		go consume("B", chanB, chanBDone)
+
+		Eventually(func() int32 {
+			return atomic.LoadInt32(&count)
+		}, "30s", "100ms").Should(BeNumerically(">=", 100))
+
+		close(chanA)
+		time.Sleep(time.Millisecond * 5000)
+		close(chanB)
+
+		Eventually(func() chan none {
+			return chanADone
+		}, "30s", "100ms").Should(BeClosed())
+
+		Eventually(func() chan none {
+			return chanBDone
+		}, "30s", "100ms").Should(BeClosed())
+	})
+
 	It("should consume/commit/resume", func() {
 		acc := make(chan *testConsumerMessage, 20000)
 		consume := func(consumerID string, max int32) {

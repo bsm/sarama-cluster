@@ -831,7 +831,11 @@ func (c *Consumer) createConsumer(tomb *loopTomb, topic string, partition int32,
 	})
 
 	if c.client.config.Group.Mode == ConsumerModePartitions {
-		c.partitions <- pc
+		select {
+		case c.partitions <- pc:
+		case <-c.dying:
+			pc.Close()
+		}
 	}
 	return nil
 }
