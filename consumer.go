@@ -404,7 +404,7 @@ func (c *Consumer) hbLoop(stopped <-chan none) {
 		case <-ticker.C:
 			switch err := c.heartbeat(); err {
 			case nil, sarama.ErrNoError:
-			case sarama.ErrNotCoordinatorForConsumer, sarama.ErrRebalanceInProgress:
+			case sarama.ErrNotCoordinator, sarama.ErrRebalanceInProgress:
 				return
 			default:
 				c.handleError(&Error{Ctx: "heartbeat", error: err})
@@ -570,7 +570,7 @@ func (c *Consumer) rebalance() (map[string][]int32, error) {
 	// Re-join consumer group
 	strategy, err := c.joinGroup()
 	switch {
-	case err == sarama.ErrUnknownMemberId:
+	case err == sarama.ErrUnknownMemberID:
 		c.membershipMu.Lock()
 		c.memberID = ""
 		c.membershipMu.Unlock()
@@ -854,7 +854,7 @@ func (c *Consumer) closeCoordinator(broker *sarama.Broker, err error) {
 	}
 
 	switch err {
-	case sarama.ErrConsumerCoordinatorNotAvailable, sarama.ErrNotCoordinatorForConsumer:
+	case sarama.ErrCoordinatorNotAvailable, sarama.ErrNotCoordinator:
 		_ = c.client.RefreshCoordinator(c.groupID)
 	}
 }

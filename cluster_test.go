@@ -182,7 +182,7 @@ type mockPartitionConsumer struct {
 func (m *mockClient) Partitions(t string) ([]int32, error) {
 	pts, ok := m.topics[t]
 	if !ok {
-		return nil, sarama.ErrInvalidTopic
+		return nil, sarama.ErrInvalidTopicException
 	}
 	return pts, nil
 }
