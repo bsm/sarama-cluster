@@ -167,7 +167,7 @@ func (c *Consumer) MarkOffsets(s *OffsetStash) {
 	}
 }
 
-// ResetOffsets marks the provided message as processed, alongside a metadata string
+// ResetOffset marks the provided message as processed, alongside a metadata string
 // that represents the state of the partition consumer at that point in time. The
 // metadata string can be used by another consumer to restore that state, so it
 // can resume consumption.
