@@ -106,7 +106,7 @@ func (c *Consumer) Messages() <-chan *sarama.ConsumerMessage { return c.messages
 
 // Partitions returns the read channels for individual partitions of this broker.
 //
-// This will channel will only return if Config.Group.Mode option is set to
+// This channel will only return if Config.Group.Mode option is set to
 // ConsumerModePartitions.
 //
 // The Partitions() channel must be listened to for the life of this consumer;
