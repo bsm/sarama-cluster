@@ -7,6 +7,10 @@
 
 Cluster extensions for [Sarama](https://github.com/Shopify/sarama), the Go client library for Apache Kafka 0.9 (and later).
 
+## DEPRECATION NOTICE
+
+Please note that since https://github.com/Shopify/sarama/pull/1099 was merged and released (>= v1.19.0) this library is officially deprecated. The native implementation supports a variety of use cases that are not available through this library.
+
 ## Documentation
 
 Documentation and example are available via godoc at http://godoc.org/github.com/bsm/sarama-cluster
