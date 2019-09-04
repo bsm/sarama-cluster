@@ -383,6 +383,9 @@ func (c *Consumer) nextTick() {
 	// Start topic watcher loop
 	tomb.Go(c.twLoop)
 
+	// Start partition watcher loop
+	tomb.Go(c.pwLoop)
+
 	// Start consuming and committing offsets
 	tomb.Go(c.cmLoop)
 	atomic.StoreInt32(&c.consuming, 1)
@@ -436,6 +439,54 @@ func (c *Consumer) twLoop(stopped <-chan none) {
 				if !c.isKnownCoreTopic(topic) &&
 					!c.isKnownExtraTopic(topic) &&
 					c.isPotentialExtraTopic(topic) {
+					return
+				}
+			}
+		case <-stopped:
+			return
+		case <-c.dying:
+			return
+		}
+	}
+}
+
+// partition watcher loop, triggered by the mainLoop
+func (c *Consumer) pwLoop(stopped <-chan none) {
+	ticker := time.NewTicker(c.client.config.Metadata.RefreshFrequency / 2)
+	defer ticker.Stop()
+
+	topics := append(c.coreTopics, c.extraTopics...)
+	if len(topics) == 0 {
+		return
+	}
+
+	get_all_partitions := func() map[string][]int32 {
+		allpartitions := make(map[string][]int32, 0)
+		for _, topic := range topics {
+			partitions, err := c.client.Partitions(topic)
+			if err != nil {
+				continue
+			}
+
+			allpartitions[topic] = partitions
+		}
+		return allpartitions
+	}
+
+	oldmap := get_all_partitions()
+
+	for {
+		select {
+		case <-ticker.C:
+			newmap := get_all_partitions()
+			for _, topic := range topics {
+				if _, ok := oldmap[topic]; !ok {
+					return
+				}
+				if _, ok := newmap[topic]; !ok {
+					return
+				}
+				if len(newmap[topic]) != len(oldmap[topic]) {
 					return
 				}
 			}
